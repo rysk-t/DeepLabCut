@@ -34,6 +34,26 @@ If you encounter errors during inference related to
 context to `torch.no_grad`, which is compatible with the DirectML execution path.
 ```
 
+#### Apple Silicon (MPS)
+
+On Apple Silicon Macs, the PyTorch engine can run pose models and object
+detectors on the GPU through Metal (`mps`). Device selection works as follows:
+
+- The pose model and the detector each have their own `device` entry in
+  `pytorch_config.yaml` (top level and under `detector:`), and the APIs accept
+  `device` and `detector_device` arguments. Precedence for the detector is
+  `detector_device` > `device` > `detector.device` in the configuration.
+- With `device: auto`, the detector only selects MPS on validated torch
+  versions and detector variants; other combinations run on the CPU.
+- An explicit MPS request for a detector is honored — it raises with a clear
+  message on torch versions below the validated floor (where MPS detectors are
+  known to hang, see DeepLabCut#3155) instead of silently falling back to the
+  CPU, and warns for detector variants that have not been numerically validated
+  against CPU runs.
+- To keep a detector on the CPU while the pose model uses MPS, pass
+  `detector_device="cpu"` or set `detector.device: cpu` in
+  `pytorch_config.yaml`.
+
 ### Camera Hardware
 
 The software is very robust to track data from any camera (cell phone cameras, grayscale, color; captured under infrared light, different manufacturers, etc.). See demos on our [website](https://www.mousemotorlab.org/deeplabcut/).

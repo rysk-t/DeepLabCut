@@ -47,6 +47,15 @@ from deeplabcut.pose_estimation_pytorch.task import Task
 
 
 class DetectorConfig(DLCBaseConfig):
+    """Configuration for the object detector of a top-down model.
+
+    Attributes:
+        model: The detector model configuration (architecture, variant, ...).
+        device: Device the detector runs on (auto, cpu, cuda, mps). With
+            ``auto``, MPS is only selected for validated torch versions and
+            detector variants.
+    """
+
     model: DetectorModelConfig
     device: str = "auto"
     data: DetectorDataConfig | None = None
@@ -81,7 +90,7 @@ class PoseConfig(DLCVersionedConfig):
     Attributes:
         net_type: Network architecture type (e.g., resnet_50, hrnet_w32, dlcrnet_stride16_ms5)
         method: Method type (bu=Bottom-Up, td=Top-Down, ctd=Conditional Top-Down)
-        device: Device configuration (auto, cpu, cuda)
+        device: Device configuration (auto, cpu, cuda, mps)
         project: Project configuration (skeleton, individuals, etc.)
         model: Model configuration (backbone, heads, etc.)
         detector: Detector configuration (for top-down models)
