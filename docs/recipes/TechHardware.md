@@ -44,7 +44,8 @@ detectors on the GPU through Metal (`mps`). Device selection works as follows:
   `device` and `detector_device` arguments. Precedence for the detector is
   `detector_device` > `device` > `detector.device` in the configuration.
 - With `device: auto`, the detector only selects MPS on validated torch
-  versions and detector variants; other combinations run on the CPU.
+  versions and detector variants; other combinations run on the CPU. Currently
+  validated: `ssdlite` on torch >= 2.12.
 - An explicit MPS request for a detector is honored — it raises with a clear
   message on torch versions below the validated floor (where MPS detectors are
   known to hang, see DeepLabCut#3155) instead of silently falling back to the

@@ -71,6 +71,11 @@ def ssdlite_validated(monkeypatch):
     monkeypatch.setattr(dlc_utils, "DETECTOR_MPS_VALIDATED_VARIANTS", frozenset({"ssdlite"}))
 
 
+@pytest.fixture
+def no_validated_variants(monkeypatch):
+    monkeypatch.setattr(dlc_utils, "DETECTOR_MPS_VALIDATED_VARIANTS", frozenset())
+
+
 @pytest.mark.parametrize("device", ["cpu", "cuda:1", "mps"])
 def test_explicit_device_returned_verbatim(device, no_cuda, with_mps):
     assert resolve_model_device(FakePoseConfig(device=device)) == device
@@ -96,9 +101,13 @@ def test_auto_pose_without_accelerator(no_cuda, no_mps):
     assert resolve_model_device(FakePoseConfig()) == "cpu"
 
 
-def test_auto_detector_requires_validated_variant(no_cuda, with_mps, mps_floor_met):
+def test_auto_detector_requires_validated_variant(no_cuda, with_mps, mps_floor_met, no_validated_variants):
     # not in the validated set -> cpu
     assert resolve_model_device(make_detector()) == "cpu"
+
+
+def test_ssdlite_is_validated_by_default():
+    assert "ssdlite" in dlc_utils.DETECTOR_MPS_VALIDATED_VARIANTS
 
 
 def test_auto_detector_validated_variant_uses_mps(no_cuda, with_mps, mps_floor_met, ssdlite_validated):
@@ -132,7 +141,12 @@ def test_validate_detector_mps_raises_below_floor(mps_floor_not_met):
 
 def test_validate_detector_mps_warns_for_unvalidated(mps_floor_met):
     with pytest.warns(UserWarning, match="not been validated"):
-        dlc_utils.validate_detector_mps_request("ssdlite")
+        dlc_utils.validate_detector_mps_request("fasterrcnn_resnet50_fpn_v2")
+
+
+def test_validate_detector_mps_silent_for_validated(mps_floor_met, ssdlite_validated, recwarn):
+    dlc_utils.validate_detector_mps_request("ssdlite")
+    assert len(recwarn) == 0
 
 
 def test_pair_without_detector(no_cuda, with_mps):
@@ -177,6 +191,7 @@ def test_pair_resolution(
     no_cuda,
     with_mps,
     mps_floor_met,
+    no_validated_variants,
     recwarn,
 ):
     cfg = FakePoseConfig(device=cfg_device, detector=make_detector())

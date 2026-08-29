@@ -65,6 +65,7 @@ def captured(monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
     monkeypatch.setattr(dlc_utils, "torch_meets_detector_mps_floor", lambda: True)
+    monkeypatch.setattr(dlc_utils, "DETECTOR_MPS_VALIDATED_VARIANTS", frozenset())
     return devices
 
 
@@ -180,3 +181,15 @@ def test_runner_devices_are_logged(pose_config, captured, caplog):
         )
     assert "Pose inference runner device: cpu" in caplog.text
     assert "Detector inference runner device: cpu" in caplog.text
+
+
+def test_get_inference_runners_auto_validated_variant(pose_config, captured, monkeypatch):
+    monkeypatch.setattr(dlc_utils, "DETECTOR_MPS_VALIDATED_VARIANTS", frozenset({"ssdlite"}))
+    api_utils.get_inference_runners(
+        model_config=pose_config,
+        snapshot_path="snapshot.pt",
+        detector_path="snapshot-detector.pt",
+        device=None,
+    )
+    assert captured["Task.TOP_DOWN"] == "mps"
+    assert captured["Task.DETECT"] == "mps"
