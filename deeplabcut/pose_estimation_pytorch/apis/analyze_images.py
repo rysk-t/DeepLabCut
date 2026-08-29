@@ -271,8 +271,8 @@ def analyze_images(
         modelprefix: The model prefix used for the shuffle.
         device: The device to use to run image analysis.
         detector_device: For top-down models, the device on which the detector
-            runs. Defaults to ``device``. Note that detectors requested on
-            "mps" currently still fall back to the CPU.
+            runs. Defaults to ``device``. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         save_as_csv: Whether to also save the predictions as a CSV file.
@@ -438,8 +438,8 @@ def analyze_image_folder(
             default behavior analyzes all ".jpg", ".jpeg" and ".png" images.
         device: The device to use to run image analysis.
         detector_device: For top-down models, the device on which the detector
-            runs. Defaults to ``device``. Note that detectors requested on
-            "mps" currently still fall back to the CPU.
+            runs. Defaults to ``device``. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         progress_bar: Whether to display a progress bar when running inference.

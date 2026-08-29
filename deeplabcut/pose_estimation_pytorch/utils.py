@@ -41,12 +41,88 @@ class ResolvedDevices:
     detector: str | None
 
 
+MIN_TORCH_FOR_DETECTOR_MPS = (2, 12)
+"""Minimum torch version for which running detectors on Apple MPS is supported.
+
+Older versions are known to hang or silently produce wrong results (see
+DeepLabCut#3155 and DeepLabCut#2853); requests for detector MPS below this
+floor raise instead of silently falling back.
+"""
+
+DETECTOR_MPS_VALIDATED_VARIANTS: frozenset[str] = frozenset()
+"""Detector variants validated on Apple MPS (training + inference numerically
+checked against CPU runs). ``device: auto`` only resolves to MPS for these;
+explicit MPS requests for other variants run with a warning."""
+
+
+def _torch_version_tuple() -> tuple[int, ...]:
+    parts = torch.__version__.split("+")[0].split(".")
+    numbers = []
+    for part in parts[:3]:
+        digits = "".join(ch for ch in part if ch.isdigit())
+        if not digits:
+            break
+        numbers.append(int(digits))
+    return tuple(numbers)
+
+
+def torch_meets_detector_mps_floor() -> bool:
+    """Whether the installed torch version supports detectors on Apple MPS."""
+    return _torch_version_tuple() >= MIN_TORCH_FOR_DETECTOR_MPS
+
+
+def detector_variant(config: DetectorConfig) -> str | None:
+    """Returns the canonical variant name of a detector config, if known."""
+    model_cfg = config.model
+    variant = model_cfg.get("variant")
+    if variant:
+        return str(variant)
+    if str(model_cfg.get("type", "")).lower() == "ssdlite":
+        return "ssdlite"
+    return None
+
+
+def validate_detector_mps_request(variant: str | None) -> None:
+    """Checks an explicit request to run a detector on Apple MPS.
+
+    Raises:
+        RuntimeError: if the installed torch version is below the validated
+            floor, where detectors are known to hang or corrupt results.
+    """
+    if not torch_meets_detector_mps_floor():
+        floor = ".".join(str(v) for v in MIN_TORCH_FOR_DETECTOR_MPS)
+        raise RuntimeError(
+            f"Running detectors on MPS requires torch >= {floor} (found "
+            f"{torch.__version__}); older versions are known to hang or "
+            'produce corrupted predictions. Use detector_device="cpu" (or '
+            "detector.device: cpu in the model configuration) to keep the "
+            "detector on the CPU."
+        )
+    if variant not in DETECTOR_MPS_VALIDATED_VARIANTS:
+        warnings.warn(
+            f"Detector variant {variant!r} has not been validated on MPS. "
+            "Compare predictions against a CPU run before trusting them.",
+            stacklevel=3,
+        )
+
+
+def detector_auto_device(variant: str | None) -> str:
+    """Auto device policy for a detector known only by its variant name."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if (
+        torch_meets_detector_mps_floor()
+        and variant in DETECTOR_MPS_VALIDATED_VARIANTS
+        and torch.backends.mps.is_available()
+    ):
+        return "mps"
+    return "cpu"
+
+
 def _model_supports_mps(model_config: PoseConfig | DetectorConfig) -> bool:
     """Whether ``device: auto`` may resolve to MPS for this model."""
     if isinstance(model_config, DetectorConfig):
-        # Legacy policy: detectors never auto-resolve to MPS. Removed when the
-        # detector MPS capability flip lands.
-        return False
+        return torch_meets_detector_mps_floor() and detector_variant(model_config) in DETECTOR_MPS_VALIDATED_VARIANTS
     return "resnet" in model_config.get("net_type", "")
 
 
@@ -91,17 +167,6 @@ def resolve_device(model_config: PoseConfig | DetectorConfig) -> str:
     return resolve_model_device(model_config)
 
 
-def _legacy_detector_fallback(device: str) -> str:
-    """Reproduces the historical detector MPS-to-CPU fallback.
-
-    Transitional: call sites route through this instead of inline guards so the
-    behavior change can land as a single, separable commit that removes it.
-    """
-    if device == "mps":
-        return "cpu"
-    return device
-
-
 def resolve_pose_and_detector_devices(
     model_config: PoseConfig,
     *,
@@ -113,9 +178,10 @@ def resolve_pose_and_detector_devices(
     Precedence for the pose model: explicit ``device`` argument, then
     ``PoseConfig.device``. For the detector: explicit ``detector_device``
     argument, then the shared ``device`` argument, then the detector's own
-    config. Under the legacy policy still in place, a detector whose device
-    would resolve to MPS falls back to the CPU unless ``detector_device``
-    requests MPS explicitly.
+    config. ``auto`` resolves per model; for detectors it only selects MPS on
+    validated torch versions and detector variants. Explicit MPS requests for
+    detectors raise below the validated torch floor and warn for unvalidated
+    variants — they are never silently moved to the CPU.
 
     Args:
         model_config: The pose configuration (with or without a detector).
@@ -135,8 +201,7 @@ def resolve_pose_and_detector_devices(
         if detector_device is not None:
             if detector_device == "cpu":
                 warnings.warn(
-                    "detector_device='cpu' is a no-op for a configuration "
-                    "without a detector.",
+                    "detector_device='cpu' is a no-op for a configuration without a detector.",
                     stacklevel=2,
                 )
             else:
@@ -147,10 +212,11 @@ def resolve_pose_and_detector_devices(
         return ResolvedDevices(pose=resolve_model_device(model_config, device), detector=None)
 
     pose = resolve_model_device(model_config, device)
-    if detector_device is not None:
-        detector = resolve_model_device(detector_config, detector_device)
-    else:
-        # Legacy policy: the detector follows the pose device with an
-        # MPS-to-CPU fallback, matching the historical guards.
-        detector = _legacy_detector_fallback(pose)
+    override = detector_device if detector_device is not None else device
+    detector = resolve_model_device(detector_config, override)
+    if detector == "mps":
+        validate_detector_mps_request(detector_variant(detector_config))
+    elif detector == "cuda" and pose.startswith("cuda:"):
+        # Keep both models on the same explicitly chosen GPU.
+        detector = pose
     return ResolvedDevices(pose=pose, detector=detector)

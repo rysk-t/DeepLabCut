@@ -43,6 +43,7 @@ from deeplabcut.pose_estimation_pytorch.runners import (
 )
 from deeplabcut.pose_estimation_pytorch.runners.inference import InferenceConfig
 from deeplabcut.pose_estimation_pytorch.task import Task
+from deeplabcut.pose_estimation_pytorch.utils import resolve_pose_and_detector_devices
 from deeplabcut.refine_training_dataset.stitch import stitch_tracklets
 from deeplabcut.utils import VideoReader, auxiliaryfunctions
 from deeplabcut.utils.auxfun_videos import collect_video_paths
@@ -302,9 +303,8 @@ def analyze_videos(
             only relevant when specifying a video directory in `videos`.
         device: the device to use for video analysis
         detector_device: for top-down models, the device to use for the object
-            detector. Takes precedence over ``device`` for the detector. Note
-            that detectors requested on "mps" currently still fall back to the
-            CPU.
+            detector. Takes precedence over ``device`` for the detector. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         destfolder: specifies the destination folder for analysis data. If ``None``,
             the path of the video is used. Note that for subsequent analysis this
             folder also needs to be passed
@@ -456,8 +456,10 @@ def analyze_videos(
     individuals = loader.model_cfg["metadata"]["individuals"]
     max_num_animals = len(individuals)
 
-    if device is not None:
-        loader.model_cfg["device"] = device
+    resolved_devices = resolve_pose_and_detector_devices(
+        loader.model_cfg, device=device, detector_device=detector_device
+    )
+    loader.model_cfg["device"] = resolved_devices.pose
 
     if batch_size is None:
         batch_size = loader.project_cfg.get("batch_size", 1)
@@ -536,7 +538,7 @@ def analyze_videos(
             snapshot_path=detector_snapshot.path,
             max_individuals=max_num_animals,
             batch_size=detector_batch_size,
-            device=detector_device,
+            device=resolved_devices.detector,
             inference_cfg=inference_cfg,
         )
 

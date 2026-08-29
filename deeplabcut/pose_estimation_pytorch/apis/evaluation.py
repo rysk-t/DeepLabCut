@@ -487,8 +487,8 @@ def evaluate_snapshot(
             computed using the detections made by this snapshot
         detector_device: Only for TD models. If defined, the device on which the
             detector runs. Takes precedence over the pose device for the
-            detector. Note that detectors requested on "mps" currently still
-            fall back to the CPU.
+            detector. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         pcutoff: The cutoff to use for computing evaluation metrics. When `None`, the
             cutoff will be loaded from the project config. If a list is provided, there
             should be one value for each bodypart and one value for each unique bodypart
@@ -691,8 +691,8 @@ def evaluate_network(
             the snapshotindex is loaded from the project configuration.
         device: the device to run evaluation on
         detector_device: for top-down models, the device on which the detector
-            runs. Takes precedence over ``device`` for the detector. Note that
-            detectors requested on "mps" currently still fall back to the CPU.
+            runs. Takes precedence over ``device`` for the detector. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         plotting: Plots the predictions on the train and test images. If provided it must
             be either ``True``, ``False``, ``"bodypart"``, or ``"individual"``. Setting
             to ``True`` defaults as ``"bodypart"`` for multi-animal projects.

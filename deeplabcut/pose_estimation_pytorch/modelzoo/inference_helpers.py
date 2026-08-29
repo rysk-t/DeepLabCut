@@ -204,6 +204,7 @@ def create_superanimal_inference_runners(
         snapshot_path=weight_init.snapshot_path,
         max_individuals=max_individuals,
         batch_size=batch_size,
+        device=model_cfg.get("device"),
         detector_batch_size=detector_batch_size,
         detector_path=weight_init.detector_snapshot_path,
     )

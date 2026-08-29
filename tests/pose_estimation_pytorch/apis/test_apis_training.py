@@ -77,8 +77,13 @@ def test_train_device_selection(
     mock_build_detector: Mock,
     mock_build_transforms: Mock,
     tmp_path: Path,
+    monkeypatch,
+    recwarn,
 ) -> None:
-    """Pins the historical detector MPS-to-CPU fallback in train()."""
+    """Pins the detector device contract in train(): explicit MPS is honored."""
+    import deeplabcut.pose_estimation_pytorch.utils as dlc_utils
+
+    monkeypatch.setattr(dlc_utils, "torch_meets_detector_mps_floor", lambda: True)
     project_cfg = {
         "multianimalproject": False,
         "project_path": str(tmp_path),
@@ -92,7 +97,7 @@ def test_train_device_selection(
     detector_config = pose_config["detector"]
 
     cases = [
-        (Task.DETECT, detector_config, "mps", "cpu"),
+        (Task.DETECT, detector_config, "mps", "mps"),  # honored, with a warning
         (Task.DETECT, detector_config, "cpu", "cpu"),
         (Task.TOP_DOWN, pose_config, "mps", "mps"),
     ]

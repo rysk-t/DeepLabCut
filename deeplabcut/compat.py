@@ -164,8 +164,8 @@ def train_network(
             Defaults to None.
         device (str, optional): Only for the PyTorch engine. The device to run the training on (e.g. "cuda:0").
         detector_device (str, optional): Only for the PyTorch engine. For top-down models, the device on which
-            the detector trains. Takes precedence over ``device`` for the detector. Note that detectors
-            requested on "mps" currently still fall back to the CPU.
+            the detector trains. Takes precedence over ``device`` for the detector. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
             Defaults to None.
         snapshot_path (str | Path, optional): Only for the PyTorch engine. The path to the pose model snapshot to
             resume training from. Defaults to None.
@@ -224,9 +224,7 @@ def train_network(
         from deeplabcut.pose_estimation_tensorflow import train_network
 
         if detector_device is not None:
-            raise ValueError(
-                "The detector_device parameter is only supported by the PyTorch engine."
-            )
+            raise ValueError("The detector_device parameter is only supported by the PyTorch engine.")
 
         if max_snapshots_to_keep is None:
             max_snapshots_to_keep = 5

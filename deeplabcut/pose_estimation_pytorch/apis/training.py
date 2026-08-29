@@ -114,9 +114,8 @@ def train(
     if gpus is None:
         gpus = run_config["runner"].get("gpus")
 
-    if task == Task.DETECT:
-        # Transitional: reproduce the historical detector MPS-to-CPU fallback.
-        device = utils._legacy_detector_fallback(device)
+    if task == Task.DETECT and device == "mps":
+        utils.validate_detector_mps_request(utils.detector_variant(run_config))
 
     if snapshot_path is None:
         snapshot_path = run_config.get("resume_training_from")
@@ -233,8 +232,8 @@ def train_network(
         device: the torch device to train on (such as "cpu", "cuda", "mps")
         detector_device: for top-down models, the torch device on which the
             detector trains. Takes precedence over ``device`` for the detector.
-            Note that detectors requested on "mps" currently still fall back to
-            the CPU.
+            MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         snapshot_path: if resuming training, the snapshot from which to resume
         detector_path: if resuming training of a top-down model, used to specify the
             detector snapshot from which to resume
@@ -354,7 +353,6 @@ def train_network(
             logger_config["run_name"] += "-detector"
 
         detector_run_config = loader.model_cfg["detector"]
-        detector_run_config["device"] = loader.model_cfg["device"]
         detector_run_config["train_settings"]["weight_init"] = loader.model_cfg["train_settings"].get("weight_init")
         train(
             loader=loader,

@@ -66,9 +66,12 @@ from deeplabcut.pose_estimation_pytorch.runners.snapshots import (
 )
 from deeplabcut.pose_estimation_pytorch.task import Task
 from deeplabcut.pose_estimation_pytorch.utils import (
-    _legacy_detector_fallback,
+    detector_auto_device,
+    detector_variant,
     resolve_device,
     resolve_model_device,
+    resolve_pose_and_detector_devices,
+    validate_detector_mps_request,
 )
 from deeplabcut.utils import auxiliaryfunctions
 from deeplabcut.utils.auxfun_videos import SUPPORTED_VIDEOS, collect_video_paths
@@ -476,8 +479,8 @@ def get_inference_runners(
         with_identity: whether the pose model has an identity head
         device: if defined, overwrites the device selection from the model config
         detector_device: if defined, the device to use for the object detector.
-            Takes precedence over ``device`` for the detector. Note that
-            detectors requested on "mps" currently still fall back to the CPU.
+            Takes precedence over ``device`` for the detector. MPS requests below the
+            validated torch floor raise; unvalidated variants warn.
         transform: the transform for pose estimation. if None, uses the transform
             defined in the config.
         detector_batch_size: the batch size to use for the detector
@@ -508,8 +511,8 @@ def get_inference_runners(
         num_unique_bodyparts = len(model_config["metadata"]["unique_bodyparts"])
 
     pose_task = Task(model_config["method"])
-    if device is None:
-        device = resolve_device(model_config)
+    resolved = resolve_pose_and_detector_devices(model_config, device=device, detector_device=detector_device)
+    device = resolved.pose
 
     if transform is None:
         transform = build_transforms(model_config["data"]["inference"])
@@ -559,13 +562,7 @@ def get_inference_runners(
             num_unique_bodyparts=num_unique_bodyparts,
         )
 
-        # Transitional: reproduce the historical detector MPS-to-CPU fallback.
-        if detector_device is not None:
-            detector_device = _legacy_detector_fallback(
-                resolve_model_device(model_config["detector"], detector_device)
-            )
-        else:
-            detector_device = _legacy_detector_fallback(device)
+        detector_device = resolved.detector
 
         if detector_path is not None:
             detector_path = str(detector_path)
@@ -643,11 +640,9 @@ def get_detector_inference_runner(
     """
     model_config = PoseConfig.from_any(model_config)
     if device is None:
-        # Historical behavior kept intentionally: with no explicit device, the
-        # detector follows the pose-level device (even MPS goes through).
-        device = resolve_device(model_config)
-    else:
-        device = _legacy_detector_fallback(device)
+        device = resolve_model_device(model_config["detector"])
+    if device == "mps":
+        validate_detector_mps_request(detector_variant(model_config["detector"]))
 
     if max_individuals is None:
         max_individuals = len(model_config["metadata"]["individuals"])
@@ -765,23 +760,25 @@ def get_filtered_coco_detector_inference_runner(
     if model_config is not None:
         model_config = PoseConfig.from_any(model_config)
         if device is None:
-            device = resolve_device(model_config)
+            # A torchvision COCO detector has no DetectorConfig of its own;
+            # its auto policy is keyed on the torchvision model name.
+            device = detector_auto_device(model_name)
         if max_individuals is None:
             max_individuals = len(model_config["metadata"]["individuals"])
         if color_mode is None:
             color_mode = model_config["data"]["colormode"]
     else:
         missing = []
-        if device is None:
-            missing.append("device")
         if max_individuals is None:
             missing.append("max_individuals")
         if color_mode is None:
             missing.append("color_mode")
         if missing:
             raise ValueError(f"If `model_config` is not provided, you must explicitly specify: {', '.join(missing)}.")
-    # Transitional: reproduce the historical detector MPS-to-CPU fallback.
-    device = _legacy_detector_fallback(device)
+    if device is None:
+        device = detector_auto_device(model_name)
+    if device == "mps":
+        validate_detector_mps_request(model_name)
 
     if transform is None:
         transform = build_transforms({"scale_to_unit_range": True})
