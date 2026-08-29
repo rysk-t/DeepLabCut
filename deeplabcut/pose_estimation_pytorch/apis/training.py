@@ -114,8 +114,9 @@ def train(
     if gpus is None:
         gpus = run_config["runner"].get("gpus")
 
-    if device == "mps" and task == Task.DETECT:
-        device = "cpu"  # FIXME: Cannot train detectors on MPS
+    if task == Task.DETECT:
+        # Transitional: reproduce the historical detector MPS-to-CPU fallback.
+        device = utils._legacy_detector_fallback(device)
 
     if snapshot_path is None:
         snapshot_path = run_config.get("resume_training_from")

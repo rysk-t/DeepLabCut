@@ -55,3 +55,54 @@ def test_train_uses_resume_training_from_config(
     train(loader=loader, run_config=run_config, task=Task.BOTTOM_UP, device="cpu", snapshot_path=None)
 
     assert mock_build_runner.call_args.kwargs["snapshot_path"] == "/train/snapshot-010.pt"
+
+
+def _make_loader(tmp_path: Path, run_config) -> Mock:
+    loader = Mock()
+    loader.model_folder = tmp_path
+    loader.model_cfg = run_config
+    train_dataset = Mock(__len__=Mock(return_value=1))
+    valid_dataset = Mock(__len__=Mock(return_value=1))
+    loader.create_dataset = Mock(side_effect=[train_dataset, valid_dataset])
+    return loader
+
+
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.build_transforms", return_value=Mock())
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.DETECTORS.build", return_value=Mock())
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.PoseModel.build", return_value=Mock())
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.build_training_runner", return_value=Mock())
+def test_train_device_selection(
+    mock_build_runner: Mock,
+    mock_build_model: Mock,
+    mock_build_detector: Mock,
+    mock_build_transforms: Mock,
+    tmp_path: Path,
+) -> None:
+    """Pins the historical detector MPS-to-CPU fallback in train()."""
+    project_cfg = {
+        "multianimalproject": False,
+        "project_path": str(tmp_path),
+        "bodyparts": ["nose"],
+        "uniquebodyparts": [],
+        "individuals": ["mouse"],
+    }
+    pose_config = make_pytorch_pose_config(
+        project_cfg, str(tmp_path / "pytorch_config.yaml"), net_type="resnet_50", top_down=True
+    )
+    detector_config = pose_config["detector"]
+
+    cases = [
+        (Task.DETECT, detector_config, "mps", "cpu"),
+        (Task.DETECT, detector_config, "cpu", "cpu"),
+        (Task.TOP_DOWN, pose_config, "mps", "mps"),
+    ]
+    for task, run_config, requested, expected in cases:
+        train(
+            loader=_make_loader(tmp_path, run_config),
+            run_config=run_config,
+            task=task,
+            device=requested,
+            snapshot_path=None,
+        )
+        actual = mock_build_runner.call_args.kwargs["device"]
+        assert actual == expected, (task, requested, actual)
