@@ -166,3 +166,17 @@ def test_filtered_coco_detector_devices(pose_config, captured, recwarn, monkeypa
         device=device,
     )
     assert captured["Task.DETECT"] == expected
+
+
+def test_runner_devices_are_logged(pose_config, captured, caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO):
+        api_utils.get_inference_runners(
+            model_config=pose_config,
+            snapshot_path="snapshot.pt",
+            detector_path="snapshot-detector.pt",
+            device="cpu",
+        )
+    assert "Pose inference runner device: cpu" in caplog.text
+    assert "Detector inference runner device: cpu" in caplog.text

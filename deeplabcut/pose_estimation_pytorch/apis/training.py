@@ -120,6 +120,7 @@ def train(
     if snapshot_path is None:
         snapshot_path = run_config.get("resume_training_from")
 
+    logging.info(f"Training the {task} model on device: {device}")
     model.to(device)  # Move model before giving its parameters to the optimizer
     runner = build_training_runner(
         runner_config=run_config["runner"],

@@ -513,6 +513,7 @@ def get_inference_runners(
     pose_task = Task(model_config["method"])
     resolved = resolve_pose_and_detector_devices(model_config, device=device, detector_device=detector_device)
     device = resolved.pose
+    logging.info(f"Pose inference runner device: {device}")
 
     if transform is None:
         transform = build_transforms(model_config["data"]["inference"])
@@ -563,6 +564,7 @@ def get_inference_runners(
         )
 
         detector_device = resolved.detector
+        logging.info(f"Detector inference runner device: {detector_device}")
 
         if detector_path is not None:
             detector_path = str(detector_path)
@@ -643,6 +645,7 @@ def get_detector_inference_runner(
         device = resolve_model_device(model_config["detector"])
     if device == "mps":
         validate_detector_mps_request(detector_variant(model_config["detector"]))
+    logging.info(f"Detector inference runner device: {device}")
 
     if max_individuals is None:
         max_individuals = len(model_config["metadata"]["individuals"])
@@ -779,6 +782,7 @@ def get_filtered_coco_detector_inference_runner(
         device = detector_auto_device(model_name)
     if device == "mps":
         validate_detector_mps_request(model_name)
+    logging.info(f"Detector inference runner device: {device}")
 
     if transform is None:
         transform = build_transforms({"scale_to_unit_range": True})
