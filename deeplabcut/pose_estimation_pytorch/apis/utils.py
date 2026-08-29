@@ -65,7 +65,10 @@ from deeplabcut.pose_estimation_pytorch.runners.snapshots import (
     TorchSnapshotManager,
 )
 from deeplabcut.pose_estimation_pytorch.task import Task
-from deeplabcut.pose_estimation_pytorch.utils import resolve_device
+from deeplabcut.pose_estimation_pytorch.utils import (
+    _legacy_detector_fallback,
+    resolve_device,
+)
 from deeplabcut.utils import auxiliaryfunctions
 from deeplabcut.utils.auxfun_videos import SUPPORTED_VIDEOS, collect_video_paths
 
@@ -551,10 +554,8 @@ def get_inference_runners(
             num_unique_bodyparts=num_unique_bodyparts,
         )
 
-        # FIXME: Cannot run detectors on MPS
-        detector_device = device
-        if device == "mps":
-            detector_device = "cpu"
+        # Transitional: reproduce the historical detector MPS-to-CPU fallback.
+        detector_device = _legacy_detector_fallback(device)
 
         if detector_path is not None:
             detector_path = str(detector_path)
@@ -632,9 +633,11 @@ def get_detector_inference_runner(
     """
     model_config = PoseConfig.from_any(model_config)
     if device is None:
+        # Historical behavior kept intentionally: with no explicit device, the
+        # detector follows the pose-level device (even MPS goes through).
         device = resolve_device(model_config)
-    elif device == "mps":  # FIXME(niels): Cannot run detectors on MPS
-        device = "cpu"
+    else:
+        device = _legacy_detector_fallback(device)
 
     if max_individuals is None:
         max_individuals = len(model_config["metadata"]["individuals"])
@@ -767,8 +770,8 @@ def get_filtered_coco_detector_inference_runner(
             missing.append("color_mode")
         if missing:
             raise ValueError(f"If `model_config` is not provided, you must explicitly specify: {', '.join(missing)}.")
-    if device == "mps":
-        device = "cpu"
+    # Transitional: reproduce the historical detector MPS-to-CPU fallback.
+    device = _legacy_detector_fallback(device)
 
     if transform is None:
         transform = build_transforms({"scale_to_unit_range": True})
