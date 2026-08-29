@@ -585,10 +585,16 @@ class DetectorTrainingRunner(TrainingRunner[BaseDetector]):
             underlying_model = self.model
 
         target = underlying_model.get_target(batch["annotations"])
+        is_mps = str(self.device).startswith("mps")
         for item in target:  # target is a list here
             for key in item:
                 if item[key] is not None:
-                    item[key] = item[key].to(self.device)
+                    tensor = item[key]
+                    if is_mps and tensor.dtype == torch.float64:
+                        # MPS has no float64 support; detector targets are
+                        # pixel coordinates, exactly representable in float32.
+                        tensor = tensor.float()
+                    item[key] = tensor.to(self.device)
 
         losses, predictions = self.model(images, target)
 
