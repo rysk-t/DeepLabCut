@@ -68,6 +68,7 @@ from deeplabcut.pose_estimation_pytorch.task import Task
 from deeplabcut.pose_estimation_pytorch.utils import (
     _legacy_detector_fallback,
     resolve_device,
+    resolve_model_device,
 )
 from deeplabcut.utils import auxiliaryfunctions
 from deeplabcut.utils.auxfun_videos import SUPPORTED_VIDEOS, collect_video_paths
@@ -450,6 +451,7 @@ def get_inference_runners(
     num_unique_bodyparts: int | None = None,
     batch_size: int = 1,
     device: str | None = None,
+    detector_device: str | None = None,
     with_identity: bool = False,
     transform: A.BaseCompose | None = None,
     detector_batch_size: int = 1,
@@ -473,6 +475,9 @@ def get_inference_runners(
         batch_size: the batch size to use for the pose model.
         with_identity: whether the pose model has an identity head
         device: if defined, overwrites the device selection from the model config
+        detector_device: if defined, the device to use for the object detector.
+            Takes precedence over ``device`` for the detector. Note that
+            detectors requested on "mps" currently still fall back to the CPU.
         transform: the transform for pose estimation. if None, uses the transform
             defined in the config.
         detector_batch_size: the batch size to use for the detector
@@ -555,7 +560,12 @@ def get_inference_runners(
         )
 
         # Transitional: reproduce the historical detector MPS-to-CPU fallback.
-        detector_device = _legacy_detector_fallback(device)
+        if detector_device is not None:
+            detector_device = _legacy_detector_fallback(
+                resolve_model_device(model_config["detector"], detector_device)
+            )
+        else:
+            detector_device = _legacy_detector_fallback(device)
 
         if detector_path is not None:
             detector_path = str(detector_path)

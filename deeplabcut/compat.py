@@ -92,6 +92,7 @@ def train_network(
     superanimal_transfer_learning: bool = False,
     engine: Engine | None = None,
     device: str | None = None,
+    detector_device: str | None = None,
     snapshot_path: str | Path | None = None,
     detector_path: str | Path | None = None,
     batch_size: int | None = None,
@@ -162,6 +163,9 @@ def train_network(
             You can overwrite this by passing the engine as an argument, but this should generally not be done.
             Defaults to None.
         device (str, optional): Only for the PyTorch engine. The device to run the training on (e.g. "cuda:0").
+        detector_device (str, optional): Only for the PyTorch engine. For top-down models, the device on which
+            the detector trains. Takes precedence over ``device`` for the detector. Note that detectors
+            requested on "mps" currently still fall back to the CPU.
             Defaults to None.
         snapshot_path (str | Path, optional): Only for the PyTorch engine. The path to the pose model snapshot to
             resume training from. Defaults to None.
@@ -219,6 +223,11 @@ def train_network(
     if engine == Engine.TF:
         from deeplabcut.pose_estimation_tensorflow import train_network
 
+        if detector_device is not None:
+            raise ValueError(
+                "The detector_device parameter is only supported by the PyTorch engine."
+            )
+
         if max_snapshots_to_keep is None:
             max_snapshots_to_keep = 5
 
@@ -247,6 +256,7 @@ def train_network(
             trainingsetindex=trainingsetindex,
             modelprefix=modelprefix,
             device=device,
+            detector_device=detector_device,
             snapshot_path=snapshot_path,
             detector_path=detector_path,
             load_head_weights=keepdeconvweights,

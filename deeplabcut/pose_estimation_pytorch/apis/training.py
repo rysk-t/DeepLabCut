@@ -206,6 +206,7 @@ def train_network(
     trainingsetindex: int = 0,
     modelprefix: str = "",
     device: str | None = None,
+    detector_device: str | None = None,
     snapshot_path: str | Path | None = None,
     detector_path: str | Path | None = None,
     load_head_weights: bool = True,
@@ -230,6 +231,10 @@ def train_network(
             to train the network (and where snapshots will be saved). By default, they
              are assumed to exist in the project folder.
         device: the torch device to train on (such as "cpu", "cuda", "mps")
+        detector_device: for top-down models, the torch device on which the
+            detector trains. Takes precedence over ``device`` for the detector.
+            Note that detectors requested on "mps" currently still fall back to
+            the CPU.
         snapshot_path: if resuming training, the snapshot from which to resume
         detector_path: if resuming training of a top-down model, used to specify the
             detector snapshot from which to resume
@@ -355,7 +360,7 @@ def train_network(
             loader=loader,
             run_config=detector_run_config,
             task=Task.DETECT,
-            device=device,
+            device=detector_device if detector_device is not None else device,
             logger_config=logger_config,
             snapshot_path=detector_path,
             max_snapshots_to_keep=max_snapshots_to_keep,

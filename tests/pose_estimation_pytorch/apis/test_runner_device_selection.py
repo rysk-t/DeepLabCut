@@ -128,3 +128,26 @@ def test_filtered_coco_detector_devices(pose_config, captured, monkeypatch, devi
         device=device,
     )
     assert captured["Task.DETECT"] == expected
+
+
+@pytest.mark.parametrize(
+    "device, detector_device, expected_pose, expected_detector",
+    [
+        ("mps", "cpu", "mps", "cpu"),
+        ("cpu", "cuda:1", "cpu", "cuda:1"),
+        ("mps", "auto", "mps", "cpu"),  # auto resolves via the detector config
+        ("cpu", "mps", "cpu", "cpu"),  # explicit mps still falls back until the flip
+    ],
+)
+def test_get_inference_runners_detector_device(
+    pose_config, captured, device, detector_device, expected_pose, expected_detector
+):
+    api_utils.get_inference_runners(
+        model_config=pose_config,
+        snapshot_path="snapshot.pt",
+        detector_path="snapshot-detector.pt",
+        device=device,
+        detector_device=detector_device,
+    )
+    assert captured["Task.TOP_DOWN"] == expected_pose
+    assert captured["Task.DETECT"] == expected_detector

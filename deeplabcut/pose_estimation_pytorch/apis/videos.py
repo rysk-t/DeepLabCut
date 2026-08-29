@@ -253,6 +253,7 @@ def analyze_videos(
     snapshot_index: int | str | None = None,
     detector_snapshot_index: int | str | None = None,
     device: str | None = None,
+    detector_device: str | None = None,
     destfolder: str | Path | None = None,
     batch_size: int | None = None,
     detector_batch_size: int | None = None,
@@ -300,6 +301,10 @@ def analyze_videos(
         in_random_order: Whether or not to analyze videos in a random order. This is
             only relevant when specifying a video directory in `videos`.
         device: the device to use for video analysis
+        detector_device: for top-down models, the device to use for the object
+            detector. Takes precedence over ``device`` for the detector. Note
+            that detectors requested on "mps" currently still fall back to the
+            CPU.
         destfolder: specifies the destination folder for analysis data. If ``None``,
             the path of the video is used. Note that for subsequent analysis this
             folder also needs to be passed
@@ -531,6 +536,7 @@ def analyze_videos(
             snapshot_path=detector_snapshot.path,
             max_individuals=max_num_animals,
             batch_size=detector_batch_size,
+            device=detector_device,
             inference_cfg=inference_cfg,
         )
 

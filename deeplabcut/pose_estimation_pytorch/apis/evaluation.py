@@ -461,6 +461,7 @@ def evaluate_snapshot(
     comparison_bodyparts: str | list[str] | None = None,
     per_keypoint_evaluation: bool = False,
     detector_snapshot: Snapshot | None = None,
+    detector_device: str | None = None,
     pcutoff: float | list[float] | dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Evaluates a snapshot. The evaluation results are stored in the .h5 and .csv file
@@ -484,6 +485,10 @@ def evaluate_snapshot(
             evaluation-results-pytorch folder.
         detector_snapshot: Only for TD models. If defined, evaluation metrics are
             computed using the detections made by this snapshot
+        detector_device: Only for TD models. If defined, the device on which the
+            detector runs. Takes precedence over the pose device for the
+            detector. Note that detectors requested on "mps" currently still
+            fall back to the CPU.
         pcutoff: The cutoff to use for computing evaluation metrics. When `None`, the
             cutoff will be loaded from the project config. If a list is provided, there
             should be one value for each bodypart and one value for each unique bodypart
@@ -511,6 +516,7 @@ def evaluate_snapshot(
         max_individuals=parameters.max_num_animals,
         num_bodyparts=parameters.num_joints,
         num_unique_bodyparts=parameters.num_unique_bpts,
+        detector_device=detector_device,
         with_identity=loader.model_cfg["metadata"]["with_identity"],
         transform=transform,
         detector_path=detector_path,
@@ -654,6 +660,7 @@ def evaluate_network(
     trainingsetindex: int | str = 0,
     snapshotindex: int | str | None = None,
     device: str | None = None,
+    detector_device: str | None = None,
     plotting: bool | str = False,
     show_errors: bool = True,
     transform: A.Compose = None,
@@ -683,6 +690,9 @@ def evaluate_network(
             and we want to evaluate snapshot-50.pt, snapshotindex should be 1. If None,
             the snapshotindex is loaded from the project configuration.
         device: the device to run evaluation on
+        detector_device: for top-down models, the device on which the detector
+            runs. Takes precedence over ``device`` for the detector. Note that
+            detectors requested on "mps" currently still fall back to the CPU.
         plotting: Plots the predictions on the train and test images. If provided it must
             be either ``True``, ``False``, ``"bodypart"``, or ``"individual"``. Setting
             to ``True`` defaults as ``"bodypart"`` for multi-animal projects.
@@ -810,6 +820,7 @@ def evaluate_network(
                         comparison_bodyparts=comparison_bodyparts,
                         per_keypoint_evaluation=per_keypoint_evaluation,
                         detector_snapshot=detector_snapshot,
+                        detector_device=detector_device,
                         pcutoff=pcutoff,
                     )
 

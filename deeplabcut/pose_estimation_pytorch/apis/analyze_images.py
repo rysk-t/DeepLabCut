@@ -241,6 +241,7 @@ def analyze_images(
     detector_snapshot_index: int | None = None,
     modelprefix: str = "",
     device: str | None = None,
+    detector_device: str | None = None,
     max_individuals: int | None = None,
     save_as_csv: bool = False,
     progress_bar: bool = True,
@@ -269,6 +270,9 @@ def analyze_images(
             snapshot to use. Loaded from the project configuration file if None.
         modelprefix: The model prefix used for the shuffle.
         device: The device to use to run image analysis.
+        detector_device: For top-down models, the device on which the detector
+            runs. Defaults to ``device``. Note that detectors requested on
+            "mps" currently still fall back to the CPU.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         save_as_csv: Whether to also save the predictions as a CSV file.
@@ -327,6 +331,7 @@ def analyze_images(
         detector_path=None if detector_snapshot is None else detector_snapshot.path,
         frame_type=frame_type,
         device=device,
+        detector_device=detector_device,
         max_individuals=max_individuals,
         progress_bar=progress_bar,
         cond_provider=ctd_conditions,
@@ -413,6 +418,7 @@ def analyze_image_folder(
     detector_path: str | Path | None = None,
     frame_type: str | None = None,
     device: str | None = None,
+    detector_device: str | None = None,
     max_individuals: int | None = None,
     progress_bar: bool = True,
     filtered_detector_config: dict | None = None,
@@ -431,6 +437,9 @@ def analyze_image_folder(
             (e.g. setting `frame_type`=".png" will only analyze ".png" images). The
             default behavior analyzes all ".jpg", ".jpeg" and ".png" images.
         device: The device to use to run image analysis.
+        detector_device: For top-down models, the device on which the detector
+            runs. Defaults to ``device``. Note that detectors requested on
+            "mps" currently still fall back to the CPU.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         progress_bar: Whether to display a progress bar when running inference.
@@ -468,6 +477,8 @@ def analyze_image_folder(
 
     if device is None:
         device = resolve_device(model_cfg)
+    if detector_device is None:
+        detector_device = device
 
     pose_runner = get_pose_inference_runner(
         model_config=model_cfg,
@@ -493,7 +504,7 @@ def analyze_image_folder(
         detector_runner = get_detector_inference_runner(
             model_config=model_cfg,
             snapshot_path=detector_path,
-            device=device,
+            device=detector_device,
             max_individuals=max_individuals,
         )
     elif filtered_detector_config is not None:
@@ -507,7 +518,7 @@ def analyze_image_folder(
             model_name=model_name,
             category_id=category_id,
             batch_size=1,
-            device=device,
+            device=detector_device,
             max_individuals=max_individuals,
             color_mode=model_cfg["data"]["colormode"],
             model_config=model_cfg,
