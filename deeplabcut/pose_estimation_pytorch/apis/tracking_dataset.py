@@ -238,7 +238,9 @@ def create_tracking_dataset(
             model_config=loader.model_cfg,
             snapshot_path=detector_snapshot.path,
             batch_size=detector_batch_size,
-            device=device,
+            # None: the detector resolves from its own config instead of
+            # inheriting the pose device (which may be an auto-resolved MPS).
+            device=None,
         )
 
     dlc_scorer = utils.get_scorer_name(

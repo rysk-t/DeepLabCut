@@ -97,7 +97,7 @@ def test_train_device_selection(
     detector_config = pose_config["detector"]
 
     cases = [
-        (Task.DETECT, detector_config, "mps", "mps"),  # honored, with a warning
+        (Task.DETECT, detector_config, "mps", "mps"),  # ssdlite is a validated variant
         (Task.DETECT, detector_config, "cpu", "cpu"),
         (Task.TOP_DOWN, pose_config, "mps", "mps"),
     ]
@@ -111,3 +111,40 @@ def test_train_device_selection(
         )
         actual = mock_build_runner.call_args.kwargs["device"]
         assert actual == expected, (task, requested, actual)
+
+
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.build_transforms", return_value=Mock())
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.DETECTORS.build", return_value=Mock())
+@patch("deeplabcut.pose_estimation_pytorch.apis.training.build_training_runner", return_value=Mock())
+def test_train_refuses_unvalidated_detector_on_mps(
+    mock_build_runner: Mock,
+    mock_build_detector: Mock,
+    mock_build_transforms: Mock,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Training an unvalidated detector variant on MPS is refused outright."""
+    import pytest
+
+    import deeplabcut.pose_estimation_pytorch.utils as dlc_utils
+
+    monkeypatch.setattr(dlc_utils, "torch_meets_detector_mps_floor", lambda: True)
+    monkeypatch.setattr(dlc_utils, "DETECTOR_MPS_VALIDATED_VARIANTS", frozenset())
+    project_cfg = {
+        "multianimalproject": False,
+        "project_path": str(tmp_path),
+        "bodyparts": ["nose"],
+        "uniquebodyparts": [],
+        "individuals": ["mouse"],
+    }
+    pose_config = make_pytorch_pose_config(
+        project_cfg, str(tmp_path / "pytorch_config.yaml"), net_type="resnet_50", top_down=True
+    )
+    with pytest.raises(RuntimeError, match="Refusing to train"):
+        train(
+            loader=_make_loader(tmp_path, pose_config["detector"]),
+            run_config=pose_config["detector"],
+            task=Task.DETECT,
+            device="mps",
+            snapshot_path=None,
+        )

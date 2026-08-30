@@ -10,12 +10,14 @@
 #
 from __future__ import annotations
 
+import functools
 import random
 import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import torch
+from packaging.version import InvalidVersion, Version
 
 from deeplabcut.pose_estimation_pytorch.config.pose import DetectorConfig, PoseConfig
 
@@ -60,25 +62,28 @@ keypoints matching CPU within 1e-4 px (p95) over a 9000-frame real video, and
 substantially faster than the CPU."""
 
 
-def _torch_version_tuple() -> tuple[int, ...]:
-    parts = torch.__version__.split("+")[0].split(".")
-    numbers = []
-    for part in parts[:3]:
-        digits = "".join(ch for ch in part if ch.isdigit())
-        if not digits:
-            break
-        numbers.append(int(digits))
-    return tuple(numbers)
-
-
+@functools.lru_cache(maxsize=1)
 def torch_meets_detector_mps_floor() -> bool:
-    """Whether the installed torch version supports detectors on Apple MPS."""
-    return _torch_version_tuple() >= MIN_TORCH_FOR_DETECTOR_MPS
+    """Whether the installed torch version supports detectors on Apple MPS.
+
+    Pre-releases and nightlies of the floor version do not qualify: validation
+    was performed against released builds.
+    """
+    floor = ".".join(str(v) for v in MIN_TORCH_FOR_DETECTOR_MPS)
+    try:
+        return Version(torch.__version__) >= Version(floor)
+    except InvalidVersion:
+        return False
 
 
-def detector_variant(config: DetectorConfig) -> str | None:
+def is_mps_device(device: str | torch.device | None) -> bool:
+    """Whether a device specification targets Apple MPS ("mps", "mps:0", ...)."""
+    return device is not None and str(device).startswith("mps")
+
+
+def detector_variant(config: DetectorConfig | dict) -> str | None:
     """Returns the canonical variant name of a detector config, if known."""
-    model_cfg = config.model
+    model_cfg = config["model"] if isinstance(config, dict) else config.model
     variant = model_cfg.get("variant")
     if variant:
         return str(variant)
@@ -87,12 +92,20 @@ def detector_variant(config: DetectorConfig) -> str | None:
     return None
 
 
-def validate_detector_mps_request(variant: str | None) -> None:
+def validate_detector_mps_request(variant: str | None, *, for_training: bool = False) -> None:
     """Checks an explicit request to run a detector on Apple MPS.
+
+    Args:
+        variant: The canonical detector variant name, if known.
+        for_training: Whether the detector is about to be trained. Training
+            unvalidated variants on MPS is refused outright: it has been
+            observed to hang the GPU badly enough to trigger a system watchdog
+            kernel panic (fasterrcnn_resnet50_fpn_v2 on Apple Silicon).
 
     Raises:
         RuntimeError: if the installed torch version is below the validated
-            floor, where detectors are known to hang or corrupt results.
+            floor, where detectors are known to hang or corrupt results — or
+            if an unvalidated variant would be trained on MPS.
     """
     if not torch_meets_detector_mps_floor():
         floor = ".".join(str(v) for v in MIN_TORCH_FOR_DETECTOR_MPS)
@@ -104,12 +117,17 @@ def validate_detector_mps_request(variant: str | None) -> None:
             "detector on the CPU."
         )
     if variant not in DETECTOR_MPS_VALIDATED_VARIANTS:
+        if for_training:
+            raise RuntimeError(
+                f"Refusing to train detector variant {variant!r} on MPS: "
+                "training unvalidated detectors on MPS can hang the GPU badly "
+                "enough to trigger a system watchdog reboot (observed with "
+                'fasterrcnn_resnet50_fpn_v2). Use detector_device="cpu" to '
+                "train the detector on the CPU."
+            )
         warnings.warn(
             f"Detector variant {variant!r} has not been validated on MPS. "
-            "Compare predictions against a CPU run before trusting them. "
-            "TRAINING unvalidated detectors on MPS can hang the GPU badly "
-            "enough to trigger a system watchdog reboot (observed with "
-            "fasterrcnn_resnet50_fpn_v2); prefer the CPU for training.",
+            "Compare predictions against a CPU run before trusting them.",
             stacklevel=3,
         )
 
@@ -186,10 +204,16 @@ def resolve_pose_and_detector_devices(
     Precedence for the pose model: explicit ``device`` argument, then
     ``PoseConfig.device``. For the detector: explicit ``detector_device``
     argument, then the shared ``device`` argument, then the detector's own
-    config. ``auto`` resolves per model; for detectors it only selects MPS on
-    validated torch versions and detector variants. Explicit MPS requests for
-    detectors raise below the validated torch floor and warn for unvalidated
-    variants — they are never silently moved to the CPU.
+    config; a detector left on ``auto`` additionally inherits an explicit
+    CPU/CUDA device pinned at the top level of the configuration (an MPS pose
+    device is never inherited — the detector then follows its own auto
+    policy). ``auto`` resolves per model; for detectors it only selects MPS on
+    validated torch versions and detector variants.
+
+    This function only resolves devices; MPS validation (raising below the
+    validated torch floor, warning or refusing unvalidated variants) happens
+    where a detector runner or trainer is actually built, so resolving a
+    configuration whose detector is never instantiated has no side effects.
 
     Args:
         model_config: The pose configuration (with or without a detector).
@@ -221,10 +245,13 @@ def resolve_pose_and_detector_devices(
 
     pose = resolve_model_device(model_config, device)
     override = detector_device if detector_device is not None else device
-    detector = resolve_model_device(detector_config, override)
-    if detector == "mps":
-        validate_detector_mps_request(detector_variant(detector_config))
-    elif detector == "cuda" and pose.startswith("cuda:"):
-        # Keep both models on the same explicitly chosen GPU.
-        detector = pose
+    if override is not None:
+        detector = resolve_model_device(detector_config, override)
+    elif detector_config.device == "auto" and model_config.device != "auto" and not is_mps_device(model_config.device):
+        # An explicit CPU/CUDA device pinned at the top level of the config
+        # applies to the detector too (matching pre-3.1 behavior); an MPS pose
+        # device is not inherited, since the detector may not support it.
+        detector = str(model_config.device)
+    else:
+        detector = resolve_model_device(detector_config)
     return ResolvedDevices(pose=pose, detector=detector)

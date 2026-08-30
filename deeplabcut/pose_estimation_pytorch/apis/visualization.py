@@ -532,7 +532,9 @@ def _get_context(
     detector_runner = utils.get_detector_inference_runner(
         model_config=loader.model_cfg,
         snapshot_path=det_snapshots[-1].path,
-        device=device,
+        # None: the detector resolves from its own config instead of
+        # inheriting the pose device (which may be an auto-resolved MPS).
+        device=None,
     )
     return detector_runner.inference(image_paths)
 

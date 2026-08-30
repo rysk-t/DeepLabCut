@@ -204,7 +204,9 @@ def create_superanimal_inference_runners(
         snapshot_path=weight_init.snapshot_path,
         max_individuals=max_individuals,
         batch_size=batch_size,
-        device=model_cfg.get("device"),
+        # None: the runners resolve from the config, so the detector is
+        # not forced onto the pose device (which may be MPS).
+        device=None,
         detector_batch_size=detector_batch_size,
         detector_path=weight_init.detector_snapshot_path,
     )

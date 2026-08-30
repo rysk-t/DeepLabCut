@@ -132,7 +132,9 @@ def _video_inference_superanimal(
             num_bodyparts=len(model_cfg["metadata"]["bodyparts"]),
             num_unique_bodyparts=0,
             batch_size=batch_size,
-            device=model_cfg.get("device"),
+            # None: the runners resolve from the config, so the detector is
+            # not forced onto the pose device (which may be MPS).
+            device=None,
             detector_batch_size=detector_batch_size,
             detector_path=detector_snapshot_path,
         )

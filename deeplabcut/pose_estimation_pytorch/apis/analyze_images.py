@@ -40,7 +40,7 @@ from deeplabcut.pose_estimation_pytorch.modelzoo.utils import (
     COCO_PERSON_CATEGORY_ID,
 )
 from deeplabcut.pose_estimation_pytorch.task import Task
-from deeplabcut.pose_estimation_pytorch.utils import resolve_device
+from deeplabcut.pose_estimation_pytorch.utils import resolve_pose_and_detector_devices
 from deeplabcut.utils import auxfun_videos, auxiliaryfunctions
 
 
@@ -271,8 +271,8 @@ def analyze_images(
         modelprefix: The model prefix used for the shuffle.
         device: The device to use to run image analysis.
         detector_device: For top-down models, the device on which the detector
-            runs. Defaults to ``device``. MPS requests below the
-            validated torch floor raise; unvalidated variants warn.
+            runs. Defaults to ``device``. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         save_as_csv: Whether to also save the predictions as a CSV file.
@@ -438,8 +438,8 @@ def analyze_image_folder(
             default behavior analyzes all ".jpg", ".jpeg" and ".png" images.
         device: The device to use to run image analysis.
         detector_device: For top-down models, the device on which the detector
-            runs. Defaults to ``device``. MPS requests below the
-            validated torch floor raise; unvalidated variants warn.
+            runs. Defaults to ``device``. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         progress_bar: Whether to display a progress bar when running inference.
@@ -475,10 +475,12 @@ def analyze_image_folder(
     if max_individuals is None:
         max_individuals = len(model_cfg["metadata"]["individuals"])
 
-    if device is None:
-        device = resolve_device(model_cfg)
+    resolved = resolve_pose_and_detector_devices(model_cfg, device=device)
+    device = resolved.pose
     if detector_device is None:
-        detector_device = device
+        # None when the config has no detector section (e.g. filtered
+        # torchvision detectors) — the detector builder then resolves itself.
+        detector_device = resolved.detector
 
     pose_runner = get_pose_inference_runner(
         model_config=model_cfg,

@@ -193,3 +193,49 @@ def test_get_inference_runners_auto_validated_variant(pose_config, captured, mon
     )
     assert captured["Task.TOP_DOWN"] == "mps"
     assert captured["Task.DETECT"] == "mps"
+
+
+def test_get_inference_runners_no_validation_without_detector_path(pose_config, captured, recwarn):
+    # No detector runner is built, so no MPS validation fires for it.
+    api_utils.get_inference_runners(
+        model_config=pose_config,
+        snapshot_path="snapshot.pt",
+        detector_path=None,
+        device="mps",
+    )
+    assert captured["Task.TOP_DOWN"] == "mps"
+    assert len(recwarn) == 0
+
+
+def test_detector_indexed_mps_raises_below_floor(pose_config, captured, monkeypatch):
+    monkeypatch.setattr(dlc_utils, "torch_meets_detector_mps_floor", lambda: False)
+    with pytest.raises(RuntimeError, match="torch >="):
+        api_utils.get_detector_inference_runner(
+            model_config=pose_config,
+            snapshot_path="snapshot-detector.pt",
+            device="mps:0",  # indexed spelling must not bypass validation
+        )
+
+
+def test_filtered_coco_detector_honors_config_pin(pose_config, captured, monkeypatch, recwarn):
+    detector = MagicMock()
+    detector.eval.return_value = detector
+    monkeypatch.setitem(
+        api_utils.TORCHVISION_DETECTORS,
+        "fasterrcnn_mobilenet_v3_large_fpn",
+        {"weights": None, "fn": lambda weights, box_score_thresh: detector},
+    )
+    monkeypatch.setattr(api_utils, "FilteredDetector", lambda *a, **k: MagicMock())
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    pose_config["device"] = "cpu"
+    api_utils.get_filtered_coco_detector_inference_runner(
+        model_name="fasterrcnn_mobilenet_v3_large_fpn",
+        category_id=1,
+        model_config=pose_config,
+        device=None,
+    )
+    assert captured["Task.DETECT"] == "cpu"
+
+
+def test_torchvision_name_maps_to_validated_variant():
+    assert api_utils._TORCHVISION_MODEL_VARIANTS["ssdlite320_mobilenet_v3_large"] == "ssdlite"

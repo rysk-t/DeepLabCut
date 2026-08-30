@@ -207,10 +207,13 @@ def test_pair_validated_variant_auto_resolves_to_mps(no_cuda, with_mps, mps_floo
     assert resolved.detector == "mps"
 
 
-def test_pair_explicit_mps_raises_below_floor(no_cuda, with_mps, mps_floor_not_met):
+def test_pair_explicit_mps_resolves_without_side_effects(no_cuda, with_mps, mps_floor_not_met, recwarn):
+    # The resolver never validates: raising/warning happens where a detector
+    # runner or trainer is actually built.
     cfg = FakePoseConfig(device="auto", detector=make_detector())
-    with pytest.raises(RuntimeError, match="torch >="):
-        resolve_pose_and_detector_devices(cfg, detector_device="mps")
+    resolved = resolve_pose_and_detector_devices(cfg, detector_device="mps")
+    assert resolved.detector == "mps"
+    assert len(recwarn) == 0
 
 
 def test_pair_detector_auto_inherits_explicit_cuda_index(monkeypatch):
@@ -219,3 +222,67 @@ def test_pair_detector_auto_inherits_explicit_cuda_index(monkeypatch):
     resolved = resolve_pose_and_detector_devices(cfg)
     assert resolved.pose == "cuda:1"
     assert resolved.detector == "cuda:1"
+
+
+def test_pair_detector_auto_inherits_pinned_cpu(monkeypatch, with_mps, mps_floor_met, ssdlite_validated):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    cfg = FakePoseConfig(device="cpu", detector=make_detector())
+    resolved = resolve_pose_and_detector_devices(cfg)
+    assert resolved.pose == "cpu"
+    assert resolved.detector == "cpu"
+
+
+def test_pair_detector_auto_does_not_inherit_mps(no_cuda, with_mps, mps_floor_met, no_validated_variants):
+    # An MPS pose device is never inherited: the detector follows its own
+    # auto policy (cpu here, since no variant is validated).
+    cfg = FakePoseConfig(device="mps", detector=make_detector())
+    resolved = resolve_pose_and_detector_devices(cfg)
+    assert resolved.pose == "mps"
+    assert resolved.detector == "cpu"
+
+
+def test_pair_explicit_detector_config_wins_over_pin(no_cuda, no_mps):
+    cfg = FakePoseConfig(device="cuda:1", detector=make_detector(device="cpu"))
+    resolved = resolve_pose_and_detector_devices(cfg)
+    assert resolved.detector == "cpu"
+
+
+def test_validate_detector_mps_training_refuses_unvalidated(mps_floor_met, no_validated_variants):
+    with pytest.raises(RuntimeError, match="Refusing to train"):
+        dlc_utils.validate_detector_mps_request("fasterrcnn_resnet50_fpn_v2", for_training=True)
+
+
+def test_validate_detector_mps_training_allows_validated(mps_floor_met, ssdlite_validated, recwarn):
+    dlc_utils.validate_detector_mps_request("ssdlite", for_training=True)
+    assert len(recwarn) == 0
+
+
+def test_is_mps_device():
+    assert dlc_utils.is_mps_device("mps")
+    assert dlc_utils.is_mps_device("mps:0")
+    assert dlc_utils.is_mps_device(torch.device("mps"))
+    assert not dlc_utils.is_mps_device("cpu")
+    assert not dlc_utils.is_mps_device("cuda:0")
+    assert not dlc_utils.is_mps_device(None)
+
+
+@pytest.mark.parametrize(
+    "version, expected",
+    [
+        ("2.12.0", True),
+        ("2.12.1", True),
+        ("2.12.1+cu121", True),
+        ("2.13.0", True),
+        ("2.11.2", False),
+        ("2.12.0a0", False),  # pre-releases of the floor do not qualify
+        ("2.12.0.dev20260401+cpu", False),
+        ("not-a-version", False),
+    ],
+)
+def test_torch_floor_version_parsing(monkeypatch, version, expected):
+    monkeypatch.setattr(torch, "__version__", version)
+    dlc_utils.torch_meets_detector_mps_floor.cache_clear()
+    try:
+        assert dlc_utils.torch_meets_detector_mps_floor() is expected
+    finally:
+        dlc_utils.torch_meets_detector_mps_floor.cache_clear()

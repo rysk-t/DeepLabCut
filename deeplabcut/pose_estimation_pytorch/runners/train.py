@@ -593,8 +593,9 @@ class DetectorTrainingRunner(TrainingRunner[BaseDetector]):
                     if is_mps and tensor.dtype == torch.float64:
                         # MPS has no float64 support; detector targets are
                         # pixel coordinates, exactly representable in float32.
-                        tensor = tensor.float()
-                    item[key] = tensor.to(self.device)
+                        item[key] = tensor.to(self.device, dtype=torch.float32)
+                    else:
+                        item[key] = tensor.to(self.device)
 
         losses, predictions = self.model(images, target)
 

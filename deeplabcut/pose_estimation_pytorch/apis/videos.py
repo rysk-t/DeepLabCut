@@ -303,8 +303,8 @@ def analyze_videos(
             only relevant when specifying a video directory in `videos`.
         device: the device to use for video analysis
         detector_device: for top-down models, the device to use for the object
-            detector. Takes precedence over ``device`` for the detector. MPS requests below the
-            validated torch floor raise; unvalidated variants warn.
+            detector. Takes precedence over ``device`` for the detector. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         destfolder: specifies the destination folder for analysis data. If ``None``,
             the path of the video is used. Note that for subsequent analysis this
             folder also needs to be passed

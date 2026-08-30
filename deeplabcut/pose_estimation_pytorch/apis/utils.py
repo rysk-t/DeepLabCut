@@ -68,8 +68,8 @@ from deeplabcut.pose_estimation_pytorch.task import Task
 from deeplabcut.pose_estimation_pytorch.utils import (
     detector_auto_device,
     detector_variant,
+    is_mps_device,
     resolve_device,
-    resolve_model_device,
     resolve_pose_and_detector_devices,
     validate_detector_mps_request,
 )
@@ -479,8 +479,8 @@ def get_inference_runners(
         with_identity: whether the pose model has an identity head
         device: if defined, overwrites the device selection from the model config
         detector_device: if defined, the device to use for the object detector.
-            Takes precedence over ``device`` for the detector. MPS requests below the
-            validated torch floor raise; unvalidated variants warn.
+            Takes precedence over ``device`` for the detector. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         transform: the transform for pose estimation. if None, uses the transform
             defined in the config.
         detector_batch_size: the batch size to use for the detector
@@ -564,9 +564,11 @@ def get_inference_runners(
         )
 
         detector_device = resolved.detector
-        logging.info(f"Detector inference runner device: {detector_device}")
 
         if detector_path is not None:
+            if is_mps_device(detector_device):
+                validate_detector_mps_request(detector_variant(model_config["detector"]))
+            logging.info(f"Detector inference runner device: {detector_device}")
             detector_path = str(detector_path)
             if detector_transform is None:
                 detector_transform = build_transforms(model_config["detector"]["data"]["inference"])
@@ -642,9 +644,11 @@ def get_detector_inference_runner(
     """
     model_config = PoseConfig.from_any(model_config)
     if device is None:
-        device = resolve_model_device(model_config["detector"])
-    if device == "mps":
-        validate_detector_mps_request(detector_variant(model_config["detector"]))
+        resolved = resolve_pose_and_detector_devices(model_config)
+        device = resolved.detector if resolved.detector is not None else resolved.pose
+    if is_mps_device(device):
+        detector_config = model_config["detector"]
+        validate_detector_mps_request(detector_variant(detector_config) if detector_config is not None else None)
     logging.info(f"Detector inference runner device: {device}")
 
     if max_individuals is None:
@@ -696,6 +700,12 @@ TORCHVISION_DETECTORS = {
         "fn": fasterrcnn_mobilenet_v3_large_fpn,
         "weights": FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT,
     },
+}
+
+_TORCHVISION_MODEL_VARIANTS = {
+    # torchvision model name -> canonical DLC detector variant name, for
+    # models whose two names differ (MPS validation is keyed on the latter).
+    "ssdlite320_mobilenet_v3_large": "ssdlite",
 }
 
 
@@ -762,10 +772,6 @@ def get_filtered_coco_detector_inference_runner(
 
     if model_config is not None:
         model_config = PoseConfig.from_any(model_config)
-        if device is None:
-            # A torchvision COCO detector has no DetectorConfig of its own;
-            # its auto policy is keyed on the torchvision model name.
-            device = detector_auto_device(model_name)
         if max_individuals is None:
             max_individuals = len(model_config["metadata"]["individuals"])
         if color_mode is None:
@@ -778,10 +784,18 @@ def get_filtered_coco_detector_inference_runner(
             missing.append("color_mode")
         if missing:
             raise ValueError(f"If `model_config` is not provided, you must explicitly specify: {', '.join(missing)}.")
+
+    # Validation is keyed on canonical DLC variant names.
+    variant = _TORCHVISION_MODEL_VARIANTS.get(model_name, model_name)
     if device is None:
-        device = detector_auto_device(model_name)
-    if device == "mps":
-        validate_detector_mps_request(model_name)
+        # An explicit CPU/CUDA device in the config applies to this detector
+        # too; an MPS (or auto) pose device leaves it on the auto policy.
+        if model_config is not None and model_config.device != "auto" and not is_mps_device(model_config.device):
+            device = str(model_config.device)
+        else:
+            device = detector_auto_device(variant)
+    if is_mps_device(device):
+        validate_detector_mps_request(variant)
     logging.info(f"Detector inference runner device: {device}")
 
     if transform is None:
