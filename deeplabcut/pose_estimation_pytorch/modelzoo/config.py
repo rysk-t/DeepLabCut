@@ -84,9 +84,9 @@ def build_superanimal_inference_config(
 
     model_config["metadata"] = metadata.to_dict()
     if device is not None:
+        # Only the shared device is stored; the detector keeps its own config
+        # (default "auto") so a persisted config does not pin a stale device.
         model_config["device"] = device
-        if model_config.get("detector", None) is not None:
-            model_config["detector"]["device"] = device
     return model_config
 
 

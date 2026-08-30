@@ -34,6 +34,36 @@ If you encounter errors during inference related to
 context to `torch.no_grad`, which is compatible with the DirectML execution path.
 ```
 
+#### Apple Silicon (MPS)
+
+On Apple Silicon Macs, the PyTorch engine can run pose models and object
+detectors on the GPU through Metal (`mps`). Device selection works as follows:
+
+- The pose model and the detector each have their own `device` entry in
+  `pytorch_config.yaml` (top level and under `detector:`), and the APIs accept
+  `device` and `detector_device` arguments. Precedence for the detector is
+  `detector_device` > `device` > `detector.device` in the configuration. A
+  detector left on `auto` additionally inherits an explicit CPU/CUDA device
+  pinned at the top level of the configuration; an MPS pose device is never
+  inherited — the detector then follows its own auto policy.
+- With `device: auto`, the detector only selects MPS on validated torch
+  versions and detector variants; other combinations run on the CPU. Currently
+  validated: `ssdlite` on torch >= 2.12 (released builds).
+- Training a detector on MPS is only allowed for validated variants: on Apple
+  Silicon (torch 2.12.1) training `fasterrcnn_resnet50_fpn_v2` (and the v1
+  variant) hangs the GPU hard enough to trigger a system watchdog kernel panic
+  and reboot, so training any other variant with an explicit MPS device raises
+  instead. Faster R-CNN *inference* on MPS has run correctly in testing, but
+  only `ssdlite` is validated end to end.
+- An explicit MPS *inference* request for a detector is honored — it raises
+  with a clear message on torch versions below the validated floor (where MPS
+  detectors are known to hang, see DeepLabCut#3155) instead of silently
+  falling back to the CPU, and warns for detector variants that have not been
+  numerically validated against CPU runs.
+- To keep a detector on the CPU while the pose model uses MPS, pass
+  `detector_device="cpu"` or set `detector.device: cpu` in
+  `pytorch_config.yaml`.
+
 ### Camera Hardware
 
 The software is very robust to track data from any camera (cell phone cameras, grayscale, color; captured under infrared light, different manufacturers, etc.). See demos on our [website](https://www.mousemotorlab.org/deeplabcut/).

@@ -88,14 +88,17 @@ def get_pose_predictions(
     if len(images_to_process) == 0:
         return sa_predictions
 
-    pose_runner, detector_runner = get_inference_runners(
+    # No detector runner is built: pseudo-labels are computed from ground-truth
+    # bounding boxes (see the FIXME below), so constructing one would only load
+    # unused weights and trigger detector device validation.
+    pose_runner, _ = get_inference_runners(
         loader.model_cfg,
         snapshot_path=model_snapshot_path,
         max_individuals=max_individuals,
         num_bodyparts=len(loader.model_cfg["metadata"]["bodyparts"]),
         num_unique_bodyparts=len(loader.model_cfg["metadata"]["unique_bodyparts"]),
         device=device,
-        detector_path=detector_snapshot_path,
+        detector_path=None,
     )
 
     # FIXME(niels, yeshaokai) - Use the detector to combine GT-keypoint created bounding

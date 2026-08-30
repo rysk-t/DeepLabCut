@@ -114,12 +114,13 @@ def train(
     if gpus is None:
         gpus = run_config["runner"].get("gpus")
 
-    if device == "mps" and task == Task.DETECT:
-        device = "cpu"  # FIXME: Cannot train detectors on MPS
+    if task == Task.DETECT and utils.is_mps_device(device):
+        utils.validate_detector_mps_request(utils.detector_variant(run_config), for_training=True)
 
     if snapshot_path is None:
         snapshot_path = run_config.get("resume_training_from")
 
+    logging.info(f"Training the {task} model on device: {device}")
     model.to(device)  # Move model before giving its parameters to the optimizer
     runner = build_training_runner(
         runner_config=run_config["runner"],
@@ -218,6 +219,7 @@ def train_network(
     max_snapshots_to_keep: int | None = None,
     pose_threshold: float | None = 0.1,
     pytorch_cfg_updates: dict | None = None,
+    detector_device: str | None = None,
 ) -> None:
     """Trains a network for a project.
 
@@ -229,6 +231,10 @@ def train_network(
             to train the network (and where snapshots will be saved). By default, they
              are assumed to exist in the project folder.
         device: the torch device to train on (such as "cpu", "cuda", "mps")
+        detector_device: for top-down models, the torch device on which the
+            detector trains. Takes precedence over ``device`` for the detector.
+            See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         snapshot_path: if resuming training, the snapshot from which to resume
         detector_path: if resuming training of a top-down model, used to specify the
             detector snapshot from which to resume
@@ -341,6 +347,9 @@ def train_network(
 
     # get the pose task
     pose_task = Task(loader.model_cfg.get("method", "bu"))
+    resolved_devices = utils.resolve_pose_and_detector_devices(
+        loader.model_cfg, device=device, detector_device=detector_device
+    )
     if pose_task == Task.TOP_DOWN and loader.model_cfg["detector"]["train_settings"]["epochs"] > 0:
         logger_config = None
         if loader.model_cfg.get("logger"):
@@ -348,13 +357,12 @@ def train_network(
             logger_config["run_name"] += "-detector"
 
         detector_run_config = loader.model_cfg["detector"]
-        detector_run_config["device"] = loader.model_cfg["device"]
         detector_run_config["train_settings"]["weight_init"] = loader.model_cfg["train_settings"].get("weight_init")
         train(
             loader=loader,
             run_config=detector_run_config,
             task=Task.DETECT,
-            device=device,
+            device=resolved_devices.detector,
             logger_config=logger_config,
             snapshot_path=detector_path,
             max_snapshots_to_keep=max_snapshots_to_keep,
@@ -365,7 +373,7 @@ def train_network(
             loader=loader,
             run_config=loader.model_cfg,
             task=pose_task,
-            device=device,
+            device=resolved_devices.pose,
             logger_config=loader.model_cfg.get("logger"),
             snapshot_path=snapshot_path,
             max_snapshots_to_keep=max_snapshots_to_keep,

@@ -100,6 +100,7 @@ def train_network(
     detector_save_epochs: int | None = None,
     pose_threshold: float | None = 0.1,
     pytorch_cfg_updates: dict | None = None,
+    detector_device: str | None = None,
 ):
     """Trains the network with the labels in the training dataset.
 
@@ -162,6 +163,9 @@ def train_network(
             You can overwrite this by passing the engine as an argument, but this should generally not be done.
             Defaults to None.
         device (str, optional): Only for the PyTorch engine. The device to run the training on (e.g. "cuda:0").
+        detector_device (str, optional): Only for the PyTorch engine. For top-down models, the device on which
+            the detector trains. Takes precedence over ``device`` for the detector. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
             Defaults to None.
         snapshot_path (str | Path, optional): Only for the PyTorch engine. The path to the pose model snapshot to
             resume training from. Defaults to None.
@@ -219,6 +223,9 @@ def train_network(
     if engine == Engine.TF:
         from deeplabcut.pose_estimation_tensorflow import train_network
 
+        if detector_device is not None:
+            raise ValueError("The detector_device parameter is only supported by the PyTorch engine.")
+
         if max_snapshots_to_keep is None:
             max_snapshots_to_keep = 5
 
@@ -247,6 +254,7 @@ def train_network(
             trainingsetindex=trainingsetindex,
             modelprefix=modelprefix,
             device=device,
+            detector_device=detector_device,
             snapshot_path=snapshot_path,
             detector_path=detector_path,
             load_head_weights=keepdeconvweights,

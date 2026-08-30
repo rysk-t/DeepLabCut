@@ -65,7 +65,15 @@ from deeplabcut.pose_estimation_pytorch.runners.snapshots import (
     TorchSnapshotManager,
 )
 from deeplabcut.pose_estimation_pytorch.task import Task
-from deeplabcut.pose_estimation_pytorch.utils import resolve_device
+from deeplabcut.pose_estimation_pytorch.utils import (
+    detector_auto_device,
+    detector_variant,
+    is_mps_device,
+    resolve_device,
+    resolve_model_device,
+    resolve_pose_and_detector_devices,
+    validate_detector_mps_request,
+)
 from deeplabcut.utils import auxiliaryfunctions
 from deeplabcut.utils.auxfun_videos import SUPPORTED_VIDEOS, collect_video_paths
 
@@ -455,6 +463,7 @@ def get_inference_runners(
     dynamic: DynamicCropper | None = None,
     inference_cfg: InferenceConfig | dict | None = None,
     min_bbox_score: float | None = None,
+    detector_device: str | None = None,
 ) -> tuple[InferenceRunner, InferenceRunner | None]:
     """Builds the runners for pose estimation.
 
@@ -470,6 +479,9 @@ def get_inference_runners(
         batch_size: the batch size to use for the pose model.
         with_identity: whether the pose model has an identity head
         device: if defined, overwrites the device selection from the model config
+        detector_device: if defined, the device to use for the object detector.
+            Takes precedence over ``device`` for the detector. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         transform: the transform for pose estimation. if None, uses the transform
             defined in the config.
         detector_batch_size: the batch size to use for the detector
@@ -500,8 +512,9 @@ def get_inference_runners(
         num_unique_bodyparts = len(model_config["metadata"]["unique_bodyparts"])
 
     pose_task = Task(model_config["method"])
-    if device is None:
-        device = resolve_device(model_config)
+    resolved = resolve_pose_and_detector_devices(model_config, device=device, detector_device=detector_device)
+    device = resolved.pose
+    logging.info(f"Pose inference runner device: {device}")
 
     if transform is None:
         transform = build_transforms(model_config["data"]["inference"])
@@ -551,12 +564,12 @@ def get_inference_runners(
             num_unique_bodyparts=num_unique_bodyparts,
         )
 
-        # FIXME: Cannot run detectors on MPS
-        detector_device = device
-        if device == "mps":
-            detector_device = "cpu"
+        detector_device = resolved.detector
 
         if detector_path is not None:
+            if is_mps_device(detector_device):
+                validate_detector_mps_request(detector_variant(model_config["detector"]))
+            logging.info(f"Detector inference runner device: {detector_device}")
             detector_path = str(detector_path)
             if detector_transform is None:
                 detector_transform = build_transforms(model_config["detector"]["data"]["inference"])
@@ -632,9 +645,15 @@ def get_detector_inference_runner(
     """
     model_config = PoseConfig.from_any(model_config)
     if device is None:
-        device = resolve_device(model_config)
-    elif device == "mps":  # FIXME(niels): Cannot run detectors on MPS
-        device = "cpu"
+        resolved = resolve_pose_and_detector_devices(model_config)
+        device = resolved.detector if resolved.detector is not None else resolved.pose
+    elif device == "auto":
+        detector_config = model_config["detector"]
+        device = resolve_model_device(detector_config if detector_config is not None else model_config, "auto")
+    if is_mps_device(device):
+        detector_config = model_config["detector"]
+        validate_detector_mps_request(detector_variant(detector_config) if detector_config is not None else None)
+    logging.info(f"Detector inference runner device: {device}")
 
     if max_individuals is None:
         max_individuals = len(model_config["metadata"]["individuals"])
@@ -685,6 +704,12 @@ TORCHVISION_DETECTORS = {
         "fn": fasterrcnn_mobilenet_v3_large_fpn,
         "weights": FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT,
     },
+}
+
+_TORCHVISION_MODEL_VARIANTS = {
+    # torchvision model name -> canonical DLC detector variant name, for
+    # models whose two names differ (MPS validation is keyed on the latter).
+    "ssdlite320_mobilenet_v3_large": "ssdlite",
 }
 
 
@@ -751,24 +776,33 @@ def get_filtered_coco_detector_inference_runner(
 
     if model_config is not None:
         model_config = PoseConfig.from_any(model_config)
-        if device is None:
-            device = resolve_device(model_config)
         if max_individuals is None:
             max_individuals = len(model_config["metadata"]["individuals"])
         if color_mode is None:
             color_mode = model_config["data"]["colormode"]
     else:
         missing = []
-        if device is None:
-            missing.append("device")
         if max_individuals is None:
             missing.append("max_individuals")
         if color_mode is None:
             missing.append("color_mode")
         if missing:
             raise ValueError(f"If `model_config` is not provided, you must explicitly specify: {', '.join(missing)}.")
-    if device == "mps":
-        device = "cpu"
+
+    # Validation is keyed on canonical DLC variant names.
+    variant = _TORCHVISION_MODEL_VARIANTS.get(model_name, model_name)
+    if device is None:
+        # An explicit CPU/CUDA device in the config applies to this detector
+        # too; an MPS (or auto) pose device leaves it on the auto policy.
+        if model_config is not None and model_config.device != "auto" and not is_mps_device(model_config.device):
+            device = str(model_config.device)
+        else:
+            device = detector_auto_device(variant)
+    elif device == "auto":
+        device = detector_auto_device(variant)
+    if is_mps_device(device):
+        validate_detector_mps_request(variant)
+    logging.info(f"Detector inference runner device: {device}")
 
     if transform is None:
         transform = build_transforms({"scale_to_unit_range": True})
@@ -854,6 +888,8 @@ def get_pose_inference_runner(
 
     if device is None:
         device = resolve_device(model_config)
+    elif device == "auto":
+        device = resolve_model_device(model_config, "auto")
 
     if transform is None:
         transform = build_transforms(model_config["data"]["inference"])

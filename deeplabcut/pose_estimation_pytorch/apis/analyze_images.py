@@ -40,7 +40,7 @@ from deeplabcut.pose_estimation_pytorch.modelzoo.utils import (
     COCO_PERSON_CATEGORY_ID,
 )
 from deeplabcut.pose_estimation_pytorch.task import Task
-from deeplabcut.pose_estimation_pytorch.utils import resolve_device
+from deeplabcut.pose_estimation_pytorch.utils import resolve_pose_and_detector_devices
 from deeplabcut.utils import auxfun_videos, auxiliaryfunctions
 
 
@@ -249,6 +249,7 @@ def analyze_images(
     bbox_pcutoff: float | None = None,
     plot_skeleton: bool = True,
     ctd_conditions: dict | ConditionsShuffleConfig | ConditionsModelConfig | None = None,
+    detector_device: str | None = None,
 ) -> dict[str, dict]:
     """Runs analysis on images using a pose model.
 
@@ -269,6 +270,9 @@ def analyze_images(
             snapshot to use. Loaded from the project configuration file if None.
         modelprefix: The model prefix used for the shuffle.
         device: The device to use to run image analysis.
+        detector_device: For top-down models, the device on which the detector
+            runs. Defaults to ``device``. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         save_as_csv: Whether to also save the predictions as a CSV file.
@@ -327,6 +331,7 @@ def analyze_images(
         detector_path=None if detector_snapshot is None else detector_snapshot.path,
         frame_type=frame_type,
         device=device,
+        detector_device=detector_device,
         max_individuals=max_individuals,
         progress_bar=progress_bar,
         cond_provider=ctd_conditions,
@@ -417,6 +422,7 @@ def analyze_image_folder(
     progress_bar: bool = True,
     filtered_detector_config: dict | None = None,
     cond_provider: ConditionsModelConfig | None = None,
+    detector_device: str | None = None,
 ) -> dict[str, dict[str, np.ndarray | np.ndarray]]:
     """Runs pose inference on a folder of images and returns the predictions.
 
@@ -431,6 +437,9 @@ def analyze_image_folder(
             (e.g. setting `frame_type`=".png" will only analyze ".png" images). The
             default behavior analyzes all ".jpg", ".jpeg" and ".png" images.
         device: The device to use to run image analysis.
+        detector_device: For top-down models, the device on which the detector
+            runs. Defaults to ``device``. See
+            ``resolve_pose_and_detector_devices`` for the MPS policy.
         max_individuals: The maximum number of individuals to detect in each image. Set
             to the number of individuals in the project if None.
         progress_bar: Whether to display a progress bar when running inference.
@@ -466,8 +475,12 @@ def analyze_image_folder(
     if max_individuals is None:
         max_individuals = len(model_cfg["metadata"]["individuals"])
 
-    if device is None:
-        device = resolve_device(model_cfg)
+    resolved = resolve_pose_and_detector_devices(model_cfg, device=device)
+    device = resolved.pose
+    if detector_device is None:
+        # None when the config has no detector section (e.g. filtered
+        # torchvision detectors) — the detector builder then resolves itself.
+        detector_device = resolved.detector
 
     pose_runner = get_pose_inference_runner(
         model_config=model_cfg,
@@ -493,7 +506,7 @@ def analyze_image_folder(
         detector_runner = get_detector_inference_runner(
             model_config=model_cfg,
             snapshot_path=detector_path,
-            device=device,
+            device=detector_device,
             max_individuals=max_individuals,
         )
     elif filtered_detector_config is not None:
@@ -507,7 +520,7 @@ def analyze_image_folder(
             model_name=model_name,
             category_id=category_id,
             batch_size=1,
-            device=device,
+            device=detector_device,
             max_individuals=max_individuals,
             color_mode=model_cfg["data"]["colormode"],
             model_config=model_cfg,

@@ -188,9 +188,8 @@ def update_config(config: dict, max_individuals: int, device: str):
     )
     config["metadata"]["individuals"] = [f"animal{i}" for i in range(max_individuals)]
 
-    resolved_device = device if device is not None else "auto"
-    config["device"] = resolved_device
-    if config.get("detector") is not None:
-        config["detector"]["device"] = resolved_device
+    # Only the shared device is stored; the detector keeps its own config
+    # (default "auto") so a persisted config does not pin a stale device.
+    config["device"] = device if device is not None else "auto"
 
     return config
