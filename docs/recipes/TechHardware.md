@@ -46,6 +46,10 @@ detectors on the GPU through Metal (`mps`). Device selection works as follows:
 - With `device: auto`, the detector only selects MPS on validated torch
   versions and detector variants; other combinations run on the CPU. Currently
   validated: `ssdlite` on torch >= 2.12.
+- Do not train `fasterrcnn_resnet50_fpn_v2` on MPS: on Apple Silicon
+  (torch 2.12.1) its training hangs the GPU hard enough to trigger a system
+  watchdog kernel panic and reboot. Faster R-CNN *inference* on MPS has run
+  correctly in testing, but only `ssdlite` is validated end to end.
 - An explicit MPS request for a detector is honored — it raises with a clear
   message on torch versions below the validated floor (where MPS detectors are
   known to hang, see DeepLabCut#3155) instead of silently falling back to the

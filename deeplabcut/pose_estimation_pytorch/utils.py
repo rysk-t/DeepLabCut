@@ -106,7 +106,10 @@ def validate_detector_mps_request(variant: str | None) -> None:
     if variant not in DETECTOR_MPS_VALIDATED_VARIANTS:
         warnings.warn(
             f"Detector variant {variant!r} has not been validated on MPS. "
-            "Compare predictions against a CPU run before trusting them.",
+            "Compare predictions against a CPU run before trusting them. "
+            "TRAINING unvalidated detectors on MPS can hang the GPU badly "
+            "enough to trigger a system watchdog reboot (observed with "
+            "fasterrcnn_resnet50_fpn_v2); prefer the CPU for training.",
             stacklevel=3,
         )
 
