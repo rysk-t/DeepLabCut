@@ -241,7 +241,6 @@ def analyze_images(
     detector_snapshot_index: int | None = None,
     modelprefix: str = "",
     device: str | None = None,
-    detector_device: str | None = None,
     max_individuals: int | None = None,
     save_as_csv: bool = False,
     progress_bar: bool = True,
@@ -250,6 +249,7 @@ def analyze_images(
     bbox_pcutoff: float | None = None,
     plot_skeleton: bool = True,
     ctd_conditions: dict | ConditionsShuffleConfig | ConditionsModelConfig | None = None,
+    detector_device: str | None = None,
 ) -> dict[str, dict]:
     """Runs analysis on images using a pose model.
 
@@ -418,11 +418,11 @@ def analyze_image_folder(
     detector_path: str | Path | None = None,
     frame_type: str | None = None,
     device: str | None = None,
-    detector_device: str | None = None,
     max_individuals: int | None = None,
     progress_bar: bool = True,
     filtered_detector_config: dict | None = None,
     cond_provider: ConditionsModelConfig | None = None,
+    detector_device: str | None = None,
 ) -> dict[str, dict[str, np.ndarray | np.ndarray]]:
     """Runs pose inference on a folder of images and returns the predictions.
 

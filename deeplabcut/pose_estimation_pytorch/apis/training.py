@@ -206,7 +206,6 @@ def train_network(
     trainingsetindex: int = 0,
     modelprefix: str = "",
     device: str | None = None,
-    detector_device: str | None = None,
     snapshot_path: str | Path | None = None,
     detector_path: str | Path | None = None,
     load_head_weights: bool = True,
@@ -220,6 +219,7 @@ def train_network(
     max_snapshots_to_keep: int | None = None,
     pose_threshold: float | None = 0.1,
     pytorch_cfg_updates: dict | None = None,
+    detector_device: str | None = None,
 ) -> None:
     """Trains a network for a project.
 

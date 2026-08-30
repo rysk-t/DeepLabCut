@@ -239,3 +239,58 @@ def test_filtered_coco_detector_honors_config_pin(pose_config, captured, monkeyp
 
 def test_torchvision_name_maps_to_validated_variant():
     assert api_utils._TORCHVISION_MODEL_VARIANTS["ssdlite320_mobilenet_v3_large"] == "ssdlite"
+
+
+def test_detector_runner_resolves_explicit_auto(pose_config, captured, recwarn):
+    api_utils.get_detector_inference_runner(
+        model_config=pose_config,
+        snapshot_path="snapshot-detector.pt",
+        device="auto",  # must be resolved, never passed to torch verbatim
+    )
+    assert captured["Task.DETECT"] == "cpu"  # unvalidated variant -> cpu
+
+
+def test_filtered_coco_detector_resolves_explicit_auto(pose_config, captured, monkeypatch, recwarn):
+    detector = MagicMock()
+    detector.eval.return_value = detector
+    monkeypatch.setitem(
+        api_utils.TORCHVISION_DETECTORS,
+        "fasterrcnn_mobilenet_v3_large_fpn",
+        {"weights": None, "fn": lambda weights, box_score_thresh: detector},
+    )
+    monkeypatch.setattr(api_utils, "FilteredDetector", lambda *a, **k: MagicMock())
+    api_utils.get_filtered_coco_detector_inference_runner(
+        model_name="fasterrcnn_mobilenet_v3_large_fpn",
+        category_id=1,
+        model_config=pose_config,
+        device="auto",
+    )
+    assert captured["Task.DETECT"] == "cpu"
+
+
+def test_detector_device_is_the_last_parameter():
+    """detector_device was added to public signatures; keeping it last preserves
+    positional-argument compatibility for pre-existing callers."""
+    import importlib
+    import inspect
+
+    import deeplabcut.pose_estimation_pytorch.apis.evaluation as eval_mod
+    import deeplabcut.pose_estimation_pytorch.apis.training as train_mod
+    import deeplabcut.pose_estimation_pytorch.apis.videos as videos_mod
+    from deeplabcut import compat
+
+    # The apis package re-exports the analyze_images FUNCTION under the same
+    # name as its module, so the module must be fetched via importlib.
+    ai_mod = importlib.import_module("deeplabcut.pose_estimation_pytorch.apis.analyze_images")
+
+    for fn in (
+        compat.train_network,
+        train_mod.train_network,
+        videos_mod.analyze_videos,
+        eval_mod.evaluate_network,
+        eval_mod.evaluate_snapshot,
+        ai_mod.analyze_images,
+        ai_mod.analyze_image_folder,
+        api_utils.get_inference_runners,
+    ):
+        assert list(inspect.signature(fn).parameters)[-1] == "detector_device", fn.__qualname__

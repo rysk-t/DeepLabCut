@@ -461,8 +461,9 @@ def evaluate_snapshot(
     comparison_bodyparts: str | list[str] | None = None,
     per_keypoint_evaluation: bool = False,
     detector_snapshot: Snapshot | None = None,
-    detector_device: str | None = None,
     pcutoff: float | list[float] | dict[str, float] | None = None,
+    device: str | None = None,
+    detector_device: str | None = None,
 ) -> pd.DataFrame:
     """Evaluates a snapshot. The evaluation results are stored in the .h5 and .csv file
     under the subdirectory 'evaluation_results'.
@@ -516,6 +517,7 @@ def evaluate_snapshot(
         max_individuals=parameters.max_num_animals,
         num_bodyparts=parameters.num_joints,
         num_unique_bodyparts=parameters.num_unique_bpts,
+        device=device,
         detector_device=detector_device,
         with_identity=loader.model_cfg["metadata"]["with_identity"],
         transform=transform,
@@ -660,7 +662,6 @@ def evaluate_network(
     trainingsetindex: int | str = 0,
     snapshotindex: int | str | None = None,
     device: str | None = None,
-    detector_device: str | None = None,
     plotting: bool | str = False,
     show_errors: bool = True,
     transform: A.Compose = None,
@@ -670,6 +671,7 @@ def evaluate_network(
     modelprefix: str = "",
     detector_snapshot_index: int | None = None,
     pcutoff: float | list[float] | dict[str, float] | None = None,
+    detector_device: str | None = None,
 ) -> None:
     """Evaluates a snapshot.
 
@@ -820,6 +822,9 @@ def evaluate_network(
                         comparison_bodyparts=comparison_bodyparts,
                         per_keypoint_evaluation=per_keypoint_evaluation,
                         detector_snapshot=detector_snapshot,
+                        # The raw argument: an explicit shared device applies
+                        # to the detector too, per the documented precedence.
+                        device=device,
                         detector_device=detector_device,
                         pcutoff=pcutoff,
                     )

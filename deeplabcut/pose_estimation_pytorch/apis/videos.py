@@ -254,7 +254,6 @@ def analyze_videos(
     snapshot_index: int | str | None = None,
     detector_snapshot_index: int | str | None = None,
     device: str | None = None,
-    detector_device: str | None = None,
     destfolder: str | Path | None = None,
     batch_size: int | None = None,
     detector_batch_size: int | None = None,
@@ -276,6 +275,7 @@ def analyze_videos(
     save_as_df: bool = False,
     show_gpu_memory: bool = False,
     inference_cfg: InferenceConfig | dict | None = None,
+    detector_device: str | None = None,
 ) -> str:
     """Makes prediction based on a trained network.
 

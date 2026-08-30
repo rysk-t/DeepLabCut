@@ -92,7 +92,6 @@ def train_network(
     superanimal_transfer_learning: bool = False,
     engine: Engine | None = None,
     device: str | None = None,
-    detector_device: str | None = None,
     snapshot_path: str | Path | None = None,
     detector_path: str | Path | None = None,
     batch_size: int | None = None,
@@ -101,6 +100,7 @@ def train_network(
     detector_save_epochs: int | None = None,
     pose_threshold: float | None = 0.1,
     pytorch_cfg_updates: dict | None = None,
+    detector_device: str | None = None,
 ):
     """Trains the network with the labels in the training dataset.
 

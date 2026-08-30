@@ -70,6 +70,7 @@ from deeplabcut.pose_estimation_pytorch.utils import (
     detector_variant,
     is_mps_device,
     resolve_device,
+    resolve_model_device,
     resolve_pose_and_detector_devices,
     validate_detector_mps_request,
 )
@@ -454,7 +455,6 @@ def get_inference_runners(
     num_unique_bodyparts: int | None = None,
     batch_size: int = 1,
     device: str | None = None,
-    detector_device: str | None = None,
     with_identity: bool = False,
     transform: A.BaseCompose | None = None,
     detector_batch_size: int = 1,
@@ -463,6 +463,7 @@ def get_inference_runners(
     dynamic: DynamicCropper | None = None,
     inference_cfg: InferenceConfig | dict | None = None,
     min_bbox_score: float | None = None,
+    detector_device: str | None = None,
 ) -> tuple[InferenceRunner, InferenceRunner | None]:
     """Builds the runners for pose estimation.
 
@@ -646,6 +647,9 @@ def get_detector_inference_runner(
     if device is None:
         resolved = resolve_pose_and_detector_devices(model_config)
         device = resolved.detector if resolved.detector is not None else resolved.pose
+    elif device == "auto":
+        detector_config = model_config["detector"]
+        device = resolve_model_device(detector_config if detector_config is not None else model_config, "auto")
     if is_mps_device(device):
         detector_config = model_config["detector"]
         validate_detector_mps_request(detector_variant(detector_config) if detector_config is not None else None)
@@ -794,6 +798,8 @@ def get_filtered_coco_detector_inference_runner(
             device = str(model_config.device)
         else:
             device = detector_auto_device(variant)
+    elif device == "auto":
+        device = detector_auto_device(variant)
     if is_mps_device(device):
         validate_detector_mps_request(variant)
     logging.info(f"Detector inference runner device: {device}")
@@ -882,6 +888,8 @@ def get_pose_inference_runner(
 
     if device is None:
         device = resolve_device(model_config)
+    elif device == "auto":
+        device = resolve_model_device(model_config, "auto")
 
     if transform is None:
         transform = build_transforms(model_config["data"]["inference"])
