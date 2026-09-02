@@ -531,6 +531,7 @@ def analyze_videos(
             snapshot_path=detector_snapshot.path,
             max_individuals=max_num_animals,
             batch_size=detector_batch_size,
+            device=device,  # the API argument wins over detector.device in the model configuration
             inference_cfg=inference_cfg,
         )
 

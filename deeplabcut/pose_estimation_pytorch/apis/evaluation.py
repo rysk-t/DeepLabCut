@@ -25,7 +25,6 @@ import deeplabcut.pose_estimation_pytorch.apis.ctd as ctd
 import deeplabcut.pose_estimation_pytorch.apis.prune_paf_graph as prune_paf_graph
 from deeplabcut.core.config import ProjectConfig
 from deeplabcut.core.weight_init import WeightInitialization
-from deeplabcut.pose_estimation_pytorch import utils
 from deeplabcut.pose_estimation_pytorch.apis.utils import (
     build_bboxes_dict_for_dataframe,
     build_predictions_dataframe,
@@ -463,6 +462,7 @@ def evaluate_snapshot(
     detector_snapshot: Snapshot | None = None,
     pcutoff: float | list[float] | dict[str, float] | None = None,
     bboxes_pcutoff: float | None = None,
+    device: str | None = None,
 ) -> pd.DataFrame:
     """Evaluates a snapshot. The evaluation results are stored in the .h5 and .csv file
     under the subdirectory 'evaluation_results'.
@@ -493,6 +493,9 @@ def evaluate_snapshot(
             in the dict will have pcutoff set to 0.6.
         bboxes_pcutoff: The cutoff to use for plotting bounding boxes from detectors.
             When `None`, the cutoff will be loaded from the project config.
+        device: the device given to ``evaluate_network``, if any. It applies to the
+            pose model and the detector; when None the devices set in the model
+            configuration are used (``detector.device`` is honoured for the detector).
     """
     if bboxes_pcutoff is None:
         bboxes_pcutoff = cfg.bboxes_pcutoff
@@ -520,6 +523,7 @@ def evaluate_snapshot(
         with_identity=loader.model_cfg["metadata"]["with_identity"],
         transform=transform,
         detector_path=detector_path,
+        device=device,
     )
 
     # For memory-replay SuperAnimal models, convert bodyparts to project bodyparts
@@ -762,7 +766,7 @@ def evaluate_network(
 
             if device is not None:
                 loader.model_cfg["device"] = device
-            loader.model_cfg["device"] = utils.resolve_device(loader.model_cfg)
+            # the runner builders resolve the devices (see get_inference_runners)
 
             snapshots = get_model_snapshots(
                 snapshotindex,
@@ -815,6 +819,7 @@ def evaluate_network(
                         per_keypoint_evaluation=per_keypoint_evaluation,
                         detector_snapshot=detector_snapshot,
                         pcutoff=pcutoff,
+                        device=device,
                     )
 
 

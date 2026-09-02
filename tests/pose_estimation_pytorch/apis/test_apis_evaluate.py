@@ -9,7 +9,7 @@
 # Licensed under GNU Lesser General Public License v3.0
 #
 from dataclasses import dataclass
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np
 import pytest
@@ -468,3 +468,44 @@ def build_mock_loader(
         "train_settings": {},
     }
     return loader
+
+
+class _Forwarded(Exception):
+    """Raised by the patched runner builder to stop evaluate_snapshot after the call under test."""
+
+
+@pytest.mark.parametrize("device", [None, "auto", "cpu", "mps", "cuda:1"])
+def test_evaluate_snapshot_forwards_device_to_runner_builders(device) -> None:
+    """The device given to evaluate_network reaches get_inference_runners unchanged.
+
+    The builders apply the detector device precedence (API argument > detector.device
+    > inherited device) and treat "auto" like a missing argument, so evaluate_snapshot
+    forwards the raw argument instead of only writing it into the configuration.
+    """
+    from deeplabcut.pose_estimation_pytorch.apis import evaluation
+
+    loader = Mock()
+    loader.model_cfg = MagicMock()  # any config key read before the runners are built is fine
+    loader.get_dataset_parameters.return_value = Mock(max_num_animals=2, num_joints=3, num_unique_bpts=0)
+    snapshot = Mock(path="snapshot-10.pt")
+    detector_snapshot = Mock(path="snapshot-detector-5.pt")
+    calls: list[dict] = []
+
+    def fake_get_inference_runners(**kwargs):
+        calls.append(kwargs)
+        raise _Forwarded
+
+    with patch.object(evaluation, "get_inference_runners", side_effect=fake_get_inference_runners):
+        with pytest.raises(_Forwarded):
+            evaluation.evaluate_snapshot(
+                cfg=Mock(bboxes_pcutoff=0.6),
+                loader=loader,
+                snapshot=snapshot,
+                scorer="scorer",
+                detector_snapshot=detector_snapshot,
+                device=device,
+            )
+
+    assert len(calls) == 1
+    assert calls[0]["device"] == device
+    assert calls[0]["detector_path"] == "snapshot-detector-5.pt"
