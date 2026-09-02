@@ -34,13 +34,62 @@ If you encounter errors during inference related to
 context to `torch.no_grad`, which is compatible with the DirectML execution path.
 ```
 
+#### Apple Silicon (MPS)
+
+On Apple Silicon Macs, the PyTorch engine can use the GPU through Metal (`mps`).
+Which models actually run there depends on the model type:
+
+- **Pose models**: with `device: auto`, ResNet backbones run on MPS. Other
+  backbones (e.g. HRNets) stay on the CPU unless `device` is set explicitly in
+  `pytorch_config.yaml`.
+- **Object detectors** (top-down / multi-animal models): a detector runs on MPS
+  only when MPS is available, the installed torch is a release `>= 2.12`, and
+  the detector variant has been validated on MPS for what it is about to do.
+  Currently validated for training and inference: `ssdlite` (the default
+  detector), on Apple Silicon with torch 2.12.1 and 2.13.0. Validated for
+  inference only: `fasterrcnn_resnet50_fpn` and `fasterrcnn_resnet50_fpn_v2`
+  (their predictions matched the CPU; their training on MPS is broken, see
+  below). Anything else runs on the CPU, and so does the training of every
+  Faster R-CNN variant; when MPS was requested explicitly (through the `device`
+  argument, `detector.device`, or a top-level `device: mps`), a warning says
+  why the detector was moved. On older torch versions, detectors
+  hang or return corrupted detections on MPS (see
+  [#3155](https://github.com/DeepLabCut/DeepLabCut/issues/3155) and
+  [#2853](https://github.com/DeepLabCut/DeepLabCut/issues/2853)), and training
+  the Faster R-CNN variants on MPS hung the GPU (`fasterrcnn_resnet50_fpn` on
+  the first iteration; `fasterrcnn_resnet50_fpn_v2` hard enough to trigger a
+  macOS watchdog kernel panic and reboot). The cause is a bug in the MPS backward
+  kernel of torchvision's `roi_align`, which over-accumulates gradients in
+  proportion to the number of RoIs (inference is unaffected); it is fixed in
+  [pytorch/vision#9510](https://github.com/pytorch/vision/pull/9510), released
+  in torchvision 0.29.0 (which requires torch 2.14). Faster R-CNN training on
+  MPS has not been validated against that release yet, so it stays on the CPU
+  on Apple Silicon. Faster R-CNN *inference* keeps running on MPS for the two
+  validated variants (`analyze_videos` used to do this without any check of
+  the torch version; the check is now applied there as well).
+- **Which device the detector uses**: the `device` argument of the API
+  (`analyze_videos`, `evaluate_network`, `train_network`) takes precedence, then
+  `detector.device` in `pytorch_config.yaml` (when it is not `auto`), then the
+  top-level `device`: an explicit top-level device is inherited when
+  `detector.device` is `auto`, and when both are `auto` the detector picks its
+  own device by the rule above (so a top-down HRNet model that stays on the CPU
+  still trains and runs its `ssdlite` detector on MPS). The same rule applies
+  to training and inference. `analyze_images`, `extract_maps` and
+  `create_tracking_dataset` currently resolve one device for the pose model and
+  the detector and do not read `detector.device`.
+- To keep the detector on the CPU explicitly, pass `device="cpu"`, or set
+  `detector.device: cpu` in `pytorch_config.yaml` (honoured by `train_network`,
+  `analyze_videos` and `evaluate_network` when no `device` argument is given).
+  Either silences the warning; a `device="mps"` argument overrides the
+  configuration pin, so drop the argument or pass `device="cpu"` instead.
+
 ### Camera Hardware
 
 The software is very robust to track data from any camera (cell phone cameras, grayscale, color; captured under infrared light, different manufacturers, etc.). See demos on our [website](https://www.mousemotorlab.org/deeplabcut/).
 
 ### Software
 
-**Operating System:** Linux (Ubuntu), MacOS\* (Mojave), or Windows 10. However, the authors strongly recommend Ubuntu! \*MacOS does not support NVIDIA GPUs (easily), so we only suggest this option for CPU use or a case where the user wants to label data, refine data, etc and then push the project to a cloud resource for GPU computing steps, or use MobileNets.
+**Operating System:** Linux (Ubuntu), MacOS\* (Mojave), or Windows 10. However, the authors strongly recommend Ubuntu! \*MacOS does not support NVIDIA GPUs. On Apple Silicon the PyTorch engine can use the GPU through MPS for ResNet pose models, the `ssdlite` detector (training and inference) and the two validated Faster R-CNN detectors (inference only), see *Apple Silicon (MPS)* above; other models run on the CPU, so for those we suggest labeling and refining data locally and pushing the project to a cloud resource for GPU computing steps.
 
 **Anaconda/Python3:** Anaconda: a free and open source distribution of the Python programming language (download from https://www.anaconda.com/). DeepLabCut is written in Python 3 (https://www.python.org/) and not compatible with Python 2.
 
